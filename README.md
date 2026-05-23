@@ -10,13 +10,15 @@ Each connector is its own Python package under `src/` with its own
 | Connector | Package | Console script | Description |
 | --- | --- | --- | --- |
 | FMP | [`fmp_mcp`](src/fmp_mcp/) | `fmp-mcp` | [Financial Modeling Prep](https://site.financialmodelingprep.com/) stable API — prices, news, financials, screener, macro, indexes (27 tools). Endpoint catalogue in [`ENDPOINTS.md`](ENDPOINTS.md). |
+| BLS | [`bls_mcp`](src/bls_mcp/) | `bls-mcp` | US [Bureau of Labor Statistics Public Data API v2](https://www.bls.gov/developers/) — CPI, unemployment, payrolls, PPI, productivity (4 tools). Works without a key via the v1 fallback. |
 
 To add a new connector, follow the recipe in [Adding a connector](#adding-a-connector).
 
 ## Requirements
 
 - Python **3.11+**
-- API keys for each connector you plan to run (e.g. `FMP_API_KEY`)
+- API keys for each connector you plan to run (e.g. `FMP_API_KEY`,
+  optionally `BLS_API_KEY`)
 
 ## Install
 
@@ -87,10 +89,49 @@ Add to `claude_desktop_config.json` (Windows:
 
 Restart Claude Desktop after editing.
 
+### Register the BLS server with Claude Code
+
+```sh
+claude mcp add bls -- uv run python -m bls_mcp.server
+```
+
+Or, without uv:
+
+```sh
+claude mcp add bls -- /full/path/to/.venv/Scripts/python -m bls_mcp.server
+```
+
+To pass the API key on registration, append `-e BLS_API_KEY=your_key`.
+
+### Register BLS with Claude Desktop
+
+Add to `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "bls": {
+      "command": "C:\\path\\to\\turningbull-mcp\\.venv\\Scripts\\python.exe",
+      "args": ["-m", "bls_mcp.server"],
+      "env": {
+        "BLS_API_KEY": "your_real_key_here",
+        "BLS_OUTPUT_DIR": "C:\\path\\to\\turningbull-mcp\\bls_output"
+      }
+    }
+  }
+}
+```
+
+`BLS_API_KEY` is optional — without it the server falls back to BLS v1
+(25 queries/day, 10-year cap, no calculations/catalog). Register for a
+free v2 key at <https://data.bls.gov/registrationEngine/>.
+
 ### Inspect with the MCP Inspector
 
 ```sh
 npx @modelcontextprotocol/inspector uv run python -m fmp_mcp.server
+# or:
+npx @modelcontextprotocol/inspector uv run python -m bls_mcp.server
 ```
 
 ## Test
@@ -121,6 +162,15 @@ turningbull-mcp/
 │   │   ├── tool_helpers.py     # READ_ONLY, chunk_date_range, render_*_result
 │   │   ├── errors.py           # ConnectorError base, empty_result_message
 │   │   └── logging.py          # stderr logger safe for MCP stdio
+│   ├── bls_mcp/                # BLS connector (sibling package)
+│   │   ├── server.py
+│   │   ├── client.py           # v1/v2 routing
+│   │   ├── transform.py        # BLS period -> ISO date, value coercion
+│   │   ├── models.py           # SeriesID, POPULAR_SERIES catalog
+│   │   ├── errors.py
+│   │   ├── output.py
+│   │   ├── formatting.py
+│   │   └── tools/series.py     # 4 tools (get_series, latest, popular, metadata)
 │   └── fmp_mcp/                # FMP connector (sibling package)
 │       ├── server.py           # FastMCP instance + lifespan
 │       ├── client.py           # FMPClient (composes shared http primitives)
@@ -210,3 +260,25 @@ turningbull-mcp/
 - **Macro**: "Compare 10y treasury yield to CPI YoY for 2020–2024."
   → `fmp_get_treasury_rates(from_date=…, to_date=…)` plus
   `fmp_get_economic_indicator(name=CPI, from_date=…, to_date=…)`.
+
+## BLS-specific usage examples (in Claude)
+
+The BLS connector wraps the [BLS Public Data API v2](https://www.bls.gov/developers/)
+so you can pull headline economic time series — CPI, unemployment, payrolls,
+PPI, productivity. A free v2 key (recommended) is available at
+<https://data.bls.gov/registrationEngine/>; without one the server falls
+back to v1 (25 queries/day, 10-year cap, no calculations/catalog) and logs
+a warning at startup.
+
+- **Latest reading**: "What's the latest CPI reading?"
+  → `bls_get_latest_observation(series_id=CUUR0000SA0)`.
+- **Compare series**: "Compare U-3 and U-6 unemployment since 2020."
+  → `bls_get_series(series_ids=["LNS14000000","LNS13327709"],
+  start_year=2020, include_calculations=true)`.
+- **Single recent value**: "What was nonfarm payroll growth last month?"
+  → `bls_get_latest_observation(series_id=CES0000000001)` and read the
+  `pct_change_12m` field (or call `bls_get_series` with
+  `include_calculations=true` for the 1-month change).
+- **Discover series IDs**: "What BLS series should I use for core CPI?"
+  → `bls_list_popular_series()` — a curated catalog grouped by Prices,
+  Labor, Productivity.
