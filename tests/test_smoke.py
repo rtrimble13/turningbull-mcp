@@ -79,7 +79,8 @@ async def server() -> Any:
 
 def _assert_not_error(text: str) -> None:
     assert text, "tool returned empty text"
-    assert "FMP error" not in text and "Unexpected error" not in text, text[:400]
+    error_markers = ("FMP error", "FMPError", "FMP API error", "Unexpected error")
+    assert not any(marker in text for marker in error_markers), text[:400]
 
 
 async def _call(server: FastMCP, name: str, **kwargs: Any) -> str:

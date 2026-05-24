@@ -14,8 +14,8 @@ from mcp.server.fastmcp import FastMCP
 from pydantic import Field
 
 from ..client import get_client
-from ..models import ResponseFormat
-from ._common import READ_ONLY, render_small_result, wrap_error
+from ..models import OutputMode, ResponseFormat
+from ._common import READ_ONLY, render_large_result, render_small_result, wrap_error
 
 
 def register(mcp: FastMCP) -> None:
@@ -96,6 +96,9 @@ def register(mcp: FastMCP) -> None:
         ),
     )
     async def fmp_get_all_forex_quotes(
+        mode: Annotated[
+            OutputMode, Field(description="summary or inline.")
+        ] = OutputMode.summary,
         response_format: Annotated[
             ResponseFormat, Field(description="markdown or json.")
         ] = ResponseFormat.markdown,
@@ -103,8 +106,14 @@ def register(mcp: FastMCP) -> None:
         try:
             client = get_client()
             data = await client.get("/stable/batch-forex-quotes", {})
-            return render_small_result(
-                data, response_format, title="Forex quotes", what="forex quotes"
+            rows = data if isinstance(data, list) else []
+            return render_large_result(
+                rows,
+                name="forex_quotes",
+                mode=mode,
+                fmt=response_format,
+                title="Forex quotes",
+                what="forex quotes",
             )
         except Exception as exc:
             return wrap_error(exc)
@@ -118,6 +127,9 @@ def register(mcp: FastMCP) -> None:
         ),
     )
     async def fmp_get_all_crypto_quotes(
+        mode: Annotated[
+            OutputMode, Field(description="summary or inline.")
+        ] = OutputMode.summary,
         response_format: Annotated[
             ResponseFormat, Field(description="markdown or json.")
         ] = ResponseFormat.markdown,
@@ -125,8 +137,14 @@ def register(mcp: FastMCP) -> None:
         try:
             client = get_client()
             data = await client.get("/stable/batch-crypto-quotes", {})
-            return render_small_result(
-                data, response_format, title="Crypto quotes", what="crypto quotes"
+            rows = data if isinstance(data, list) else []
+            return render_large_result(
+                rows,
+                name="crypto_quotes",
+                mode=mode,
+                fmt=response_format,
+                title="Crypto quotes",
+                what="crypto quotes",
             )
         except Exception as exc:
             return wrap_error(exc)
@@ -140,6 +158,9 @@ def register(mcp: FastMCP) -> None:
         ),
     )
     async def fmp_get_all_commodity_quotes(
+        mode: Annotated[
+            OutputMode, Field(description="summary or inline.")
+        ] = OutputMode.summary,
         response_format: Annotated[
             ResponseFormat, Field(description="markdown or json.")
         ] = ResponseFormat.markdown,
@@ -147,8 +168,14 @@ def register(mcp: FastMCP) -> None:
         try:
             client = get_client()
             data = await client.get("/stable/batch-commodity-quotes", {})
-            return render_small_result(
-                data, response_format, title="Commodity quotes", what="commodity quotes"
+            rows = data if isinstance(data, list) else []
+            return render_large_result(
+                rows,
+                name="commodity_quotes",
+                mode=mode,
+                fmt=response_format,
+                title="Commodity quotes",
+                what="commodity quotes",
             )
         except Exception as exc:
             return wrap_error(exc)

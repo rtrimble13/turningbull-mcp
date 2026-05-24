@@ -21,8 +21,9 @@ async def _safe_get(path: str, params: dict[str, Any] | None = None) -> Any:
     """Issue a client.get but swallow exceptions to keep composite resilient.
 
     Composite tools call many endpoints; one 403 (premium gate) or 404
-    shouldn't blank the whole snapshot. Failed sub-calls become ``None``
-    in the composite dict so the analyst still sees what did succeed.
+    shouldn't blank the whole snapshot. Failed sub-calls become
+    ``{"error": "..."}`` entries in the composite dict so the analyst
+    still sees what did succeed.
     """
     try:
         return await get_client().get(path, params or {})

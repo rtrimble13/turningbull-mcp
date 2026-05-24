@@ -81,6 +81,15 @@ def _normalize_optional_symbol(value: str | None) -> str | None:
     return _normalize_symbol(value)
 
 
+def _normalize_cik(value: str | int | None) -> str | None:
+    if value is None:
+        return None
+    s = str(value).strip()
+    if not s:
+        raise ValueError("CIK cannot be blank")
+    return s.zfill(10)
+
+
 OptionalSymbol = Annotated[
     str | None,
     BeforeValidator(_normalize_optional_symbol),
@@ -225,7 +234,7 @@ ECONOMIC_INDICATORS: tuple[str, ...] = (
 
 CIK = Annotated[
     str,
-    BeforeValidator(lambda v: str(v).strip().zfill(10) if v is not None else v),
+    BeforeValidator(_normalize_cik),
     Field(description="10-digit SEC CIK (leading zeros auto-padded)."),
 ]
 
@@ -234,7 +243,7 @@ OptionalCIK = Annotated[
     str | None,
     BeforeValidator(
         lambda v: None if v is None or (isinstance(v, str) and not v.strip())
-        else str(v).strip().zfill(10)
+        else _normalize_cik(v)
     ),
     Field(default=None, description="Optional SEC CIK (leading zeros auto-padded)."),
 ]
