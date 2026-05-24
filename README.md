@@ -11,6 +11,7 @@ Each connector is its own Python package under `src/` with its own
 | --- | --- | --- | --- |
 | FMP | [`fmp_mcp`](src/fmp_mcp/) | `fmp-mcp` | [Financial Modeling Prep](https://site.financialmodelingprep.com/) stable API — prices, technical indicators, news, financials, valuation (DCF + Piotroski/Altman), analyst estimates, earnings transcripts, calendars, ownership (insider + 13F), SEC filings, ETFs, multi-asset, composite snapshots (97 tools). Endpoint catalogue in [`FMP_ENDPOINTS.md`](FMP_ENDPOINTS.md). |
 | BLS | [`bls_mcp`](src/bls_mcp/) | `bls-mcp` | US [Bureau of Labor Statistics Public Data API v2](https://www.bls.gov/developers/) — CPI, unemployment, payrolls, PPI, productivity, JOLTS, ECI (16 tools spanning fetch, discovery, analytics, and composite snapshots). Endpoint catalogue in [`BLS_ENDPOINTS.md`](BLS_ENDPOINTS.md). Works without a key via the v1 fallback (discovery tools work key-less). |
+| BEA | [`bea_mcp`](src/bea_mcp/) | `bea-mcp` | US [Bureau of Economic Analysis API](https://apps.bea.gov/API/bea_web_service_api_user_guide.htm) — national accounts (GDP, personal income, PCE, corporate profits), regional accounts (state/county GDP and income), GDP by industry, input-output tables, fixed assets, and international accounts (ITA, IIP, services, MNE). 22 tools spanning meta-discovery (four BEA meta methods + local table search), generic GetData, typed per-dataset wrappers for all 12 data datasets, and composite snapshots (GDP, trade balance, regional, personal income). Endpoint catalogue in [`BEA_ENDPOINTS.md`](BEA_ENDPOINTS.md). Requires a free 36-char [UserID](https://apps.bea.gov/API/signup/). |
 
 To add a new connector, follow the recipe in [Adding a connector](#adding-a-connector).
 
@@ -381,3 +382,104 @@ and series-ID encodings.
 - **Real wage growth**: "Are wages outpacing inflation?"
   → `bls_real_wages(months_back=24)` — nominal AHE, CPI, real wage
   index rebased to 100, nominal & real YoY.
+
+## BEA-specific usage examples (in Claude)
+
+The BEA connector wraps the [BEA Data API](https://apps.bea.gov/API/bea_web_service_api_user_guide.htm)
+across 22 tools spanning four areas: **discovery** (the four BEA meta
+methods plus a local table search), **generic fetch** (a single
+`bea_get_data` escape hatch), **typed per-dataset wrappers** (one per
+dataset for NIPA, NIUnderlyingDetail, FixedAssets, Regional,
+GDPbyIndustry, UnderlyingGDPbyIndustry, InputOutput, ITA, IIP,
+IntlServTrade, IntlServSTA, MNE), and **composite dashboards** (GDP,
+trade balance, regional, personal income). A free 36-character UserID is
+required — register at <https://apps.bea.gov/API/signup/>. See
+[`BEA_ENDPOINTS.md`](BEA_ENDPOINTS.md) for the full tool-to-API map.
+
+### Discovery
+
+- **What datasets does BEA expose?** → `bea_list_datasets()`.
+- **What parameters does the Regional dataset take?**
+  → `bea_list_parameters(dataset="Regional")`.
+- **What TableNames exist in NIPA?**
+  → `bea_list_parameter_values(dataset="NIPA", parameter="TableName")`.
+- **What LineCodes are valid for Regional CAINC4?**
+  → `bea_list_parameter_values_filtered(dataset="Regional",
+  target_parameter="LineCode", filters={"TableName": "CAINC4"})`.
+- **Pick a popular table quickly**:
+  → `bea_search_tables(query="real GDP")` (pure local, no API call).
+
+### National accounts
+
+- **Headline GDP, quarterly**:
+  → `bea_get_nipa(table_name="T10101", frequency="Q", year="LAST10")`.
+- **Personal income detail, monthly**:
+  → `bea_get_nipa(table_name="T20600", frequency="M", year="LAST5")`.
+- **Corporate profits by industry**:
+  → `bea_get_nipa(table_name="T11400", frequency="Q", year="LAST10")`.
+- **Underlying detail (deeper PCE breakdown)**:
+  → `bea_get_ni_underlying_detail(table_name="U70405", frequency="A",
+  year="LAST10")`.
+- **Fixed assets net stock**:
+  → `bea_get_fixed_assets(table_name="FAAt101", year="LAST10")`.
+
+### Regional accounts
+
+- **Personal income by state**:
+  → `bea_get_regional(table_name="CAINC4", line_code=1,
+  geo_fips="STATE", year="LAST5")`.
+- **Real GDP for one state (California)**:
+  → `bea_get_regional(table_name="SAGDP9N", line_code=1,
+  geo_fips="06000", year="LAST10")`.
+- **County-level personal income (large — use summary)**:
+  → `bea_get_regional(table_name="CAINC1", line_code=1,
+  geo_fips="COUNTY", year="2023", mode="summary")`.
+
+### Industry & input-output
+
+- **Value added by industry, latest**:
+  → `bea_get_gdp_by_industry(table_id=1, frequency="A",
+  industry="ALL", year="LAST5")`.
+- **Industry share of GDP**:
+  → `bea_get_gdp_by_industry(table_id=5, frequency="A",
+  industry="ALL", year="LAST10")`.
+- **Industry-by-commodity total requirements (I-O)**:
+  → `bea_get_input_output(table_id=56, year="LAST5",
+  mode="summary")`.
+
+### International accounts
+
+- **Current account balance vs. China**:
+  → `bea_get_ita(indicator="BalCurrAcct", area_or_country="China",
+  frequency="A", year="LAST10")`.
+- **Net international investment position**:
+  → `bea_get_iip(type_of_investment="IIPNetPos", component="Pos",
+  frequency="Q", year="LAST10")`.
+- **Services trade with the EU**:
+  → `bea_get_intl_serv_trade(type_of_service="AllServiceTypes",
+  trade_direction="Balance", area_or_country="EuropeanUnion",
+  year="LAST5")`.
+- **US MNEs abroad — sales by country**:
+  → `bea_get_mne(direction_of_investment="outward", series_id="8",
+  classification="Country", year="LAST5")`.
+
+### Composite dashboards
+
+- **GDP snapshot**: "What's the latest GDP print and what drove it?"
+  → `bea_gdp_snapshot(quarters_back=8)` — headline real GDP growth +
+  contributions from PCE / investment / net exports / government.
+- **Trade balance snapshot**: "How big is the current-account deficit?"
+  → `bea_trade_balance_snapshot(years_back=5)` — current account,
+  goods, services, secondary income, plus IIP change in position.
+- **Regional snapshot**: "Which states grew fastest?"
+  → `bea_regional_snapshot(geo_fips="STATE", years_back=5)` — ranked
+  real-GDP growth across all states.
+- **Personal income snapshot**: "How are households doing?"
+  → `bea_personal_income_snapshot(months_back=24)` — personal income,
+  DPI, savings rate, outlays.
+
+### Escape hatch (any dataset)
+
+- **Anything not covered by a typed tool**:
+  → `bea_get_data(dataset="NIPA", params={"TableName": "T20305",
+  "Frequency": "Q", "Year": "LAST10"})`.
