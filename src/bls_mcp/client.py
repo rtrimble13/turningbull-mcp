@@ -55,6 +55,7 @@ class BLSClient:
         catalog: bool = False,
         calculations: bool = False,
         annual_average: bool = False,
+        aspects: bool = False,
         retries: int = 3,
     ) -> list[dict[str, Any]]:
         """Fetch one or more series and return the raw ``Results.series`` list.
@@ -62,7 +63,7 @@ class BLSClient:
         Routes through v2 (POST JSON, multi-series) when a key is configured,
         otherwise falls back to v1 (single-series GET, fanned out and merged).
         The v1 path silently drops ``catalog``/``calculations``/
-        ``annual_average`` because the endpoint doesn't support them.
+        ``annual_average``/``aspects`` because the endpoint doesn't support them.
         """
         if not series_ids:
             return []
@@ -74,6 +75,7 @@ class BLSClient:
                 catalog=catalog,
                 calculations=calculations,
                 annual_average=annual_average,
+                aspects=aspects,
                 retries=retries,
             )
         return await self._fetch_v1(
@@ -92,6 +94,7 @@ class BLSClient:
         catalog: bool,
         calculations: bool,
         annual_average: bool,
+        aspects: bool,
         retries: int,
     ) -> list[dict[str, Any]]:
         body: dict[str, Any] = {
@@ -108,6 +111,8 @@ class BLSClient:
             body["calculations"] = True
         if annual_average:
             body["annualaverage"] = True
+        if aspects:
+            body["aspects"] = True
 
         payload = await self._post(V2_BASE_URL, body, retries=retries)
         return self._extract_series(payload)

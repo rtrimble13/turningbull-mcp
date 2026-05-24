@@ -20,7 +20,11 @@ from ..models import (
     SeriesID,
     SeriesIDList,
 )
-from ..transform import reshape_series
+from ..transform import (
+    CALCULATION_PERIODS,
+    filter_calculation_periods,
+    reshape_series,
+)
 from ._common import (
     READ_ONLY,
     render_large_result,
@@ -60,6 +64,7 @@ async def _fetch_all_series(
     include_calculations: bool,
     include_annual_average: bool,
     include_catalog: bool,
+    include_aspects: bool = False,
 ) -> list[dict[str, Any]]:
     """Run all required chunked fetches and merge into one ``Results.series`` list.
 
@@ -82,6 +87,7 @@ async def _fetch_all_series(
                 catalog=include_catalog,
                 calculations=include_calculations,
                 annual_average=include_annual_average,
+                aspects=include_aspects,
             )
             for s in raw:
                 sid = s.get("seriesID")
@@ -179,10 +185,44 @@ def register(mcp: FastMCP) -> None:
             Field(
                 description=(
                     "If true, ask BLS for the series catalog metadata "
-                    "(populates title, units, seasonal_adjustment). Requires v2."
+                    "(populates title, units, seasonal_adjustment, and the "
+                    "metadata block: survey, area, item, industry, etc.). "
+                    "Requires v2."
                 )
             ),
         ] = False,
+        include_aspects: Annotated[
+            bool,
+            Field(
+                description=(
+                    "If true, ask BLS for per-observation aspect metadata "
+                    "(survey-specific; e.g. data quality flags). Surfaced "
+                    "under each observation's `aspects` field. Requires v2."
+                )
+            ),
+        ] = False,
+        calculation_periods: Annotated[
+            list[int] | None,
+            Field(
+                default=None,
+                description=(
+                    "Restrict calculation columns to these periods (months). "
+                    "Allowed values: 1, 3, 6, 12. Default keeps all four. "
+                    "Only meaningful when include_calculations=true."
+                ),
+            ),
+        ] = None,
+        expose_metadata: Annotated[
+            bool,
+            Field(
+                description=(
+                    "If true (default), include the full catalog metadata "
+                    "block (survey, area, item, industry, periodicity, etc.) "
+                    "alongside the legacy top-level title/units/SA fields. "
+                    "Set to false to save tokens on high-cardinality calls."
+                )
+            ),
+        ] = True,
         mode: Annotated[
             OutputMode,
             Field(
@@ -199,6 +239,13 @@ def register(mcp: FastMCP) -> None:
         ] = ResponseFormat.markdown,
     ) -> str:
         try:
+            if calculation_periods is not None:
+                invalid = [p for p in calculation_periods if p not in CALCULATION_PERIODS]
+                if invalid:
+                    raise ValueError(
+                        f"calculation_periods values {invalid} not in "
+                        f"{list(CALCULATION_PERIODS)}"
+                    )
             raw_series = await _fetch_all_series(
                 series_ids,
                 start_year=start_year,
@@ -206,8 +253,16 @@ def register(mcp: FastMCP) -> None:
                 include_calculations=include_calculations,
                 include_annual_average=include_annual_average,
                 include_catalog=include_catalog,
+                include_aspects=include_aspects,
             )
-            reshaped = [reshape_series(s) for s in raw_series]
+            reshaped = [
+                reshape_series(s, expose_metadata=expose_metadata) for s in raw_series
+            ]
+            if calculation_periods is not None:
+                for series in reshaped:
+                    series["observations"] = filter_calculation_periods(
+                        series["observations"], calculation_periods
+                    )
 
             if mode == OutputMode.summary:
                 # Flatten observations into a long-form table for CSV/Parquet.
@@ -294,6 +349,82 @@ def register(mcp: FastMCP) -> None:
                 response_format,
                 title=f"Latest observation: {series_id}",
                 what=series_id,
+            )
+        except Exception as exc:
+            return wrap_error(exc)
+
+    @mcp.tool(
+        name="bls_get_latest_observations",
+        annotations=READ_ONLY,
+        description=(
+            "Fetch the most recent observation for many series in a single "
+            "v2 call (no year bounds; BLS returns the most-recent period for "
+            "each). Use this when you only need the latest reading for "
+            "several series at once — much cheaper than calling "
+            "bls_get_series for full history. Returns a list of "
+            "{series_id, title, date, value, net_change_1m, pct_change_1m, "
+            "pct_change_12m}."
+        ),
+    )
+    async def bls_get_latest_observations(
+        series_ids: Annotated[
+            SeriesIDList,
+            Field(
+                description=(
+                    "BLS series IDs (list or comma-separated string)."
+                )
+            ),
+        ],
+        response_format: Annotated[
+            ResponseFormat,
+            Field(description="markdown (default) or json."),
+        ] = ResponseFormat.markdown,
+    ) -> str:
+        try:
+            client = get_client()
+            want_extras = client.using_v2
+            raw_series = await _fetch_all_series(
+                series_ids,
+                start_year=None,
+                end_year=None,
+                include_calculations=want_extras,
+                include_annual_average=False,
+                include_catalog=want_extras,
+            )
+            payload: list[dict[str, Any]] = []
+            for s in raw_series:
+                shaped = reshape_series(s, expose_metadata=False)
+                observations = shaped.get("observations") or []
+                if not observations:
+                    payload.append(
+                        {
+                            "series_id": shaped["series_id"],
+                            "title": shaped.get("title"),
+                            "date": None,
+                            "value": None,
+                            "net_change_1m": None,
+                            "pct_change_1m": None,
+                            "pct_change_12m": None,
+                        }
+                    )
+                    continue
+                latest = observations[-1]
+                payload.append(
+                    {
+                        "series_id": shaped["series_id"],
+                        "title": shaped.get("title"),
+                        "date": latest["date"],
+                        "value": latest["value"],
+                        "net_change_1m": latest.get("net_change_1m"),
+                        "pct_change_1m": latest.get("pct_change_1m"),
+                        "pct_change_12m": latest.get("pct_change_12m"),
+                    }
+                )
+            return render_small_result(
+                payload,
+                response_format,
+                title=f"Latest observations ({len(payload)})",
+                what=", ".join(series_ids),
             )
         except Exception as exc:
             return wrap_error(exc)

@@ -9,8 +9,8 @@ Each connector is its own Python package under `src/` with its own
 
 | Connector | Package | Console script | Description |
 | --- | --- | --- | --- |
-| FMP | [`fmp_mcp`](src/fmp_mcp/) | `fmp-mcp` | [Financial Modeling Prep](https://site.financialmodelingprep.com/) stable API — prices, news, financials, screener, macro, indexes (27 tools). Endpoint catalogue in [`ENDPOINTS.md`](ENDPOINTS.md). |
-| BLS | [`bls_mcp`](src/bls_mcp/) | `bls-mcp` | US [Bureau of Labor Statistics Public Data API v2](https://www.bls.gov/developers/) — CPI, unemployment, payrolls, PPI, productivity (4 tools). Works without a key via the v1 fallback. |
+| FMP | [`fmp_mcp`](src/fmp_mcp/) | `fmp-mcp` | [Financial Modeling Prep](https://site.financialmodelingprep.com/) stable API — prices, news, financials, screener, macro, indexes (27 tools). Endpoint catalogue in [`FMP_ENDPOINTS.md`](FMP_ENDPOINTS.md). |
+| BLS | [`bls_mcp`](src/bls_mcp/) | `bls-mcp` | US [Bureau of Labor Statistics Public Data API v2](https://www.bls.gov/developers/) — CPI, unemployment, payrolls, PPI, productivity, JOLTS, ECI (16 tools spanning fetch, discovery, analytics, and composite snapshots). Endpoint catalogue in [`BLS_ENDPOINTS.md`](BLS_ENDPOINTS.md). Works without a key via the v1 fallback (discovery tools work key-less). |
 
 To add a new connector, follow the recipe in [Adding a connector](#adding-a-connector).
 
@@ -164,13 +164,19 @@ turningbull-mcp/
 │   │   └── logging.py          # stderr logger safe for MCP stdio
 │   ├── bls_mcp/                # BLS connector (sibling package)
 │   │   ├── server.py
-│   │   ├── client.py           # v1/v2 routing
-│   │   ├── transform.py        # BLS period -> ISO date, value coercion
-│   │   ├── models.py           # SeriesID, POPULAR_SERIES catalog
+│   │   ├── client.py           # v1/v2 routing (catalog/calculations/annualaverage/aspects)
+│   │   ├── transform.py        # BLS period -> ISO date, value coercion, full calc grid
+│   │   ├── models.py           # SeriesID, SeriesIDList, Survey enum
 │   │   ├── errors.py
 │   │   ├── output.py
 │   │   ├── formatting.py
-│   │   └── tools/series.py     # 4 tools (get_series, latest, popular, metadata)
+│   │   ├── catalog/            # Embedded BLS code tables (CPI/CES/LAUS/...)
+│   │   ├── builders/           # CPI / CES / LAUS series-ID construction
+│   │   └── tools/              # 16 tools across:
+│   │       ├── series.py       #   fetch primitives
+│   │       ├── discovery.py    #   search, build, describe (pure local)
+│   │       ├── analytics.py    #   panel, transforms, deflate
+│   │       └── composites.py   #   inflation / labor / real-wages snapshots
 │   └── fmp_mcp/                # FMP connector (sibling package)
 │       ├── server.py           # FastMCP instance + lifespan
 │       ├── client.py           # FMPClient (composes shared http primitives)
@@ -264,21 +270,67 @@ turningbull-mcp/
 ## BLS-specific usage examples (in Claude)
 
 The BLS connector wraps the [BLS Public Data API v2](https://www.bls.gov/developers/)
-so you can pull headline economic time series — CPI, unemployment, payrolls,
-PPI, productivity. A free v2 key (recommended) is available at
-<https://data.bls.gov/registrationEngine/>; without one the server falls
-back to v1 (25 queries/day, 10-year cap, no calculations/catalog) and logs
-a warning at startup.
+across 16 tools spanning four areas: **fetch primitives**, **discovery**
+(catalog + ID construction), **analytics** (panel, transforms,
+deflation), and **composite dashboards**. A free v2 key (recommended) is
+available at <https://data.bls.gov/registrationEngine/>; without one the
+server falls back to v1 (25 queries/day, 10-year cap, no
+calculations/catalog/aspects). **Discovery tools work without a key.**
+See [`BLS_ENDPOINTS.md`](BLS_ENDPOINTS.md) for the full tool-to-API map
+and series-ID encodings.
+
+### Fetch primitives
 
 - **Latest reading**: "What's the latest CPI reading?"
   → `bls_get_latest_observation(series_id=CUUR0000SA0)`.
-- **Compare series**: "Compare U-3 and U-6 unemployment since 2020."
+- **Latest readings for many series in one call**:
+  → `bls_get_latest_observations(series_ids="CUUR0000SA0,LNS14000000,CES0000000001")`.
+- **Compare series with full calculations grid (1m/3m/6m/12m)**:
   → `bls_get_series(series_ids=["LNS14000000","LNS13327709"],
-  start_year=2020, include_calculations=true)`.
-- **Single recent value**: "What was nonfarm payroll growth last month?"
-  → `bls_get_latest_observation(series_id=CES0000000001)` and read the
-  `pct_change_12m` field (or call `bls_get_series` with
-  `include_calculations=true` for the 1-month change).
-- **Discover series IDs**: "What BLS series should I use for core CPI?"
-  → `bls_list_popular_series()` — a curated catalog grouped by Prices,
-  Labor, Productivity.
+  start_year=2020, include_calculations=true,
+  include_catalog=true, include_aspects=true)`.
+- **Restrict calculations to a single period**:
+  → `bls_get_series(..., include_calculations=true,
+  calculation_periods=[12])`.
+
+### Discovery (pure local — no API key needed)
+
+- **Search the catalog**: "What series should I use for shelter inflation?"
+  → `bls_search_series(query="shelter")`.
+- **Build a series ID from human inputs**: "I want SA core CPI."
+  → `bls_build_series_id(survey="CPI", cpi_area_code="0000",
+  cpi_item_code="SA0L1E", cpi_seasonal="SA")` → `CUSR0000SA0L1E`.
+- **Decode a series ID you already have**:
+  → `bls_describe_series(series_id="LASST480000000000003")` → "LAUS, SA,
+  Texas, Unemployment rate".
+- **Browse area / item / measure codes**:
+  → `bls_list_areas(survey="LAUS", query="texas")`,
+  `bls_list_items(survey="CPI", query="rent")`.
+
+### Analytics
+
+- **Panel-data export for regression**: "Pull CPI, U-3, and payrolls
+  monthly since 2010 as one aligned dataset."
+  → `bls_compose_panel(series_ids=["CUUR0000SA0","LNS14000000","CES0000000001"],
+  start_year=2010, mode=summary)` → writes CSV+Parquet to
+  `$BLS_OUTPUT_DIR`.
+- **Apply an econometric transform**: "Show CPI as YoY % change."
+  → `bls_transform_series(series_id="CUUR0000SA0", transform="yoy",
+  start_year=2000)`.
+- **Real wages**: "Deflate AHE by CPI."
+  → `bls_deflate_series(nominal_series_id="CES0500000003",
+  deflator_series_id="CUSR0000SA0", start_year=2010)`.
+
+### Composite dashboards
+
+- **Inflation snapshot**: "Give me the latest inflation picture."
+  → `bls_inflation_snapshot(months_back=12)` — headline, core, food,
+  energy, shelter, services-less-energy with latest YoY and MoM
+  annualized.
+- **Labor market snapshot**: "How tight is the labor market?"
+  → `bls_labor_market_snapshot(months_back=12, include_jolts=true)` —
+  U-3, U-6, LFPR, employment-population ratio, payrolls, AHE, AWH,
+  openings + quits rates, and the 3-month average payrolls change.
+- **Real wage growth**: "Are wages outpacing inflation?"
+  → `bls_real_wages(months_back=24)` — nominal AHE, CPI, real wage
+  index rebased to 100, nominal & real YoY.
