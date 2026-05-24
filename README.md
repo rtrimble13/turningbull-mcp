@@ -12,6 +12,7 @@ Each connector is its own Python package under `src/` with its own
 | FMP | [`fmp_mcp`](src/fmp_mcp/) | `fmp-mcp` | [Financial Modeling Prep](https://site.financialmodelingprep.com/) stable API — prices, technical indicators, news, financials, valuation (DCF + Piotroski/Altman), analyst estimates, earnings transcripts, calendars, ownership (insider + 13F), SEC filings, ETFs, multi-asset, composite snapshots (97 tools). Endpoint catalogue in [`FMP_ENDPOINTS.md`](FMP_ENDPOINTS.md). |
 | BLS | [`bls_mcp`](src/bls_mcp/) | `bls-mcp` | US [Bureau of Labor Statistics Public Data API v2](https://www.bls.gov/developers/) — CPI, unemployment, payrolls, PPI, productivity, JOLTS, ECI (16 tools spanning fetch, discovery, analytics, and composite snapshots). Endpoint catalogue in [`BLS_ENDPOINTS.md`](BLS_ENDPOINTS.md). Works without a key via the v1 fallback (discovery tools work key-less). |
 | BEA | [`bea_mcp`](src/bea_mcp/) | `bea-mcp` | US [Bureau of Economic Analysis API](https://apps.bea.gov/API/bea_web_service_api_user_guide.htm) — national accounts (GDP, personal income, PCE, corporate profits), regional accounts (state/county GDP and income), GDP by industry, input-output tables, fixed assets, and international accounts (ITA, IIP, services, MNE). 22 tools spanning meta-discovery (four BEA meta methods + local table search), generic GetData, typed per-dataset wrappers for all 12 data datasets, and composite snapshots (GDP, trade balance, regional, personal income). Endpoint catalogue in [`BEA_ENDPOINTS.md`](BEA_ENDPOINTS.md). Requires a free 36-char [UserID](https://apps.bea.gov/API/signup/). |
+| AG  | [`ag_mcp`](src/ag_mcp/) | `ag-mcp` | ARIMA-GARCH model fitting, selection, forecasting, simulation, and diagnostics on top of the `arima-garch` C++ engine (shelled out via the `ag` CLI). 15 tools: 8 primitives (1:1 CLI wrappers + describe/list helpers), 2 data-prep tools (returns conversion + direct FMP/BLS/BEA load), and 5 analyst composites (volatility snapshot, VaR snapshot, forecast distribution, volatility comparison, macro volatility snapshot, stress test). Designed to compose with FMP/BLS/BEA: a single Claude turn can go from "symbol or series ID" to "fitted model + diagnostics + forecast + VaR" with no manual file shuffling. Endpoint catalogue in [`AG_ENDPOINTS.md`](AG_ENDPOINTS.md). Requires building the C++ engine — see [arima-garch/README.md](https://github.com/) for the prerequisite. |
 
 To add a new connector, follow the recipe in [Adding a connector](#adding-a-connector).
 
@@ -127,12 +128,51 @@ Add to `claude_desktop_config.json`:
 (25 queries/day, 10-year cap, no calculations/catalog). Register for a
 free v2 key at <https://data.bls.gov/registrationEngine/>.
 
+### Register the AG server with Claude Code
+
+`ag_mcp` requires the compiled `ag` binary from the [arima-garch](https://github.com/)
+project. Build it first (see that repo's README), then set
+`AG_BINARY_PATH=/full/path/to/ag` in your `.env` (or place `ag` on
+`PATH`). Once that's done:
+
+```sh
+claude mcp add ag -- uv run python -m ag_mcp.server
+```
+
+Or, without uv:
+
+```sh
+claude mcp add ag -- /full/path/to/.venv/Scripts/python -m ag_mcp.server
+```
+
+To pass the binary path on registration, append
+`-e AG_BINARY_PATH=/full/path/to/ag`.
+
+### Register AG with Claude Desktop
+
+```json
+{
+  "mcpServers": {
+    "ag": {
+      "command": "C:\\path\\to\\turningbull-mcp\\.venv\\Scripts\\python.exe",
+      "args": ["-m", "ag_mcp.server"],
+      "env": {
+        "AG_BINARY_PATH": "C:\\path\\to\\arima-garch\\build\\ninja-release\\src\\ag.exe",
+        "AG_OUTPUT_DIR": "C:\\path\\to\\turningbull-mcp\\ag_output"
+      }
+    }
+  }
+}
+```
+
 ### Inspect with the MCP Inspector
 
 ```sh
 npx @modelcontextprotocol/inspector uv run python -m fmp_mcp.server
 # or:
 npx @modelcontextprotocol/inspector uv run python -m bls_mcp.server
+# or:
+npx @modelcontextprotocol/inspector uv run python -m ag_mcp.server
 ```
 
 ## Test
@@ -483,3 +523,81 @@ required — register at <https://apps.bea.gov/API/signup/>. See
 - **Anything not covered by a typed tool**:
   → `bea_get_data(dataset="NIPA", params={"TableName": "T20305",
   "Frequency": "Q", "Year": "LAST10"})`.
+
+## AG-specific usage examples (in Claude)
+
+The AG connector wraps the [arima-garch](https://github.com/) C++ engine
+via its `ag` CLI. Build the binary first (see that repo's README) and
+set `AG_BINARY_PATH` in your `.env`. All persisted artifacts (raw
+prices, derived returns, fitted models, forecasts, simulations,
+diagnostics) live under `$AG_OUTPUT_DIR` in a fixed substructure. See
+[`AG_ENDPOINTS.md`](AG_ENDPOINTS.md) for the full tool→CLI-subcommand
+map and returns-preprocessing conventions.
+
+### One-shot analyst workflows
+
+- **Fit a GARCH model to NVDA daily returns and tell me if it's
+  well-specified**:
+  → `ag_volatility_snapshot(symbol="NVDA")` — pulls 5y FMP prices,
+  converts to log returns, runs `ag select` (BIC), runs `ag
+  diagnostics`, and runs `ag forecast` for 22 trading days. Response
+  includes `model_adequate: bool`, the Ljung-Box² p-value (the GARCH-
+  adequacy gate), persistence (with near-unit-root flag), and a
+  Student-t recommendation block if the residuals call for it.
+
+- **10-day 95% VaR on a $1M SPY position**:
+  → `ag_var_snapshot(symbol="SPY", horizon_days=10, confidence=0.95,
+  portfolio_value=1_000_000)` — runs an empirical Monte Carlo VaR
+  against the parametric Gaussian VaR and reports the fat-tail uplift.
+  Warns if the model uses Gaussian innovations but Student-t was
+  recommended (tail risk understated).
+
+- **Compare volatility clustering across FAANG**:
+  → `ag_compare_volatility(symbols=["META","AAPL","AMZN","NFLX","GOOG"])`
+  — ranked table by GARCH persistence (highest = strongest volatility
+  clustering), with annualized realized vol, annualized unconditional
+  vol (when defined), and a Student-t recommendation flag per name.
+
+- **How persistent is core CPI inflation?**:
+  → `ag_macro_volatility_snapshot(series_id="CUSR0000SA0L1E",
+  source="bls", return_type="log")` — pulls 20 years of BLS core CPI,
+  takes log differences, fits ARIMA-GARCH, and reports persistence and
+  unconditional inflation variance. Monthly cadence auto-sets the
+  annualization factor to 12.
+
+- **Stress-test SPY under heavy tails**:
+  → `ag_stress_test(symbol="SPY", scenario="student_t_df3")` — large
+  MC under Student-t(3) innovations. Run the three scenarios
+  (`gaussian`, `student_t_df5`, `student_t_df3`) and compare the
+  return-distribution p1/p5 to see how much your tail-risk number
+  depends on the innovation-distribution assumption.
+
+### Data preparation
+
+- **Convert an existing FMP prices CSV to log returns**:
+  → `ag_prepare_returns(prices_csv_path="/path/to/NVDA_daily.csv",
+  symbol_or_label="NVDA", return_type="log",
+  price_column="adjClose")`.
+
+- **Direct-from-source pull (no FMP server registration needed)**:
+  → `ag_load_series(source="fmp_prices", identifier="SPY",
+  from_date="2010-01-01")` (reuses `FMP_API_KEY`).
+
+- **BLS series → returns CSV**:
+  → `ag_load_series(source="bls_series", identifier="CUSR0000SA0L1E",
+  from_date="2005-01", return_type="log")` (level series → log
+  differences). For YoY series, drop `return_type` to use the
+  default `"none"`.
+
+### Primitives (use when the composite tools aren't a fit)
+
+- `ag_fit(data_path="...", arima=[1,0,1], garch=[1,1],
+  innovation="student_t", t_df=5)`.
+- `ag_select(data_path="...", max_p=2, max_q=2, criterion="BIC")`.
+- `ag_forecast(model_path="...", horizon=22, annualize=true)`.
+- `ag_simulate(model_path="...", paths=2000, length=22, seed=42)`.
+- `ag_diagnostics(model_path="...", data_path="...")`.
+- `ag_describe_model(model_path="...")` — pure local file read.
+- `ag_list_models()` — scan `$AG_OUTPUT_DIR/models/`.
+- `ag_sim_from_spec(arima=[1,0,1], garch=[1,1], length=500)` — bare
+  spec → synthetic series (useful for tests).
