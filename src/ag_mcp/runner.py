@@ -41,6 +41,22 @@ from .interpretation import (
 
 DEFAULT_TIMEOUT_SECONDS = 600.0
 
+# The CLI selects the innovation distribution by the presence/absence of
+# `--t-dist <df>`: omit it for Gaussian, pass it (with a positive df) for
+# Student-t. There is no `--innovation` flag. Default df=5.0 matches the
+# `student_t_df5` scenario in `tools/composites.py`.
+DEFAULT_STUDENT_T_DF = 5.0
+
+
+def _innovation_argv(
+    innovation: Literal["gaussian", "student_t"], t_df: float | None
+) -> list[str]:
+    """Translate (innovation, t_df) into the CLI's argv form."""
+    if innovation == "student_t":
+        df = float(t_df) if t_df is not None else DEFAULT_STUDENT_T_DF
+        return ["--t-dist", str(df)]
+    return []
+
 
 # ---------- result dataclasses -------------------------------------------
 
@@ -277,11 +293,8 @@ class AGRunner:
             self._garch_str(garch),
             "-o",
             str(output_path),
-            "--innovation",
-            innovation,
         ]
-        if t_df is not None:
-            argv += ["--t-df", str(float(t_df))]
+        argv += _innovation_argv(innovation, t_df)
         if no_header:
             argv.append("--no-header")
         stdout, stderr = await self._run(argv, cmd="fit")
@@ -532,11 +545,8 @@ class AGRunner:
             str(output_path),
             "--seed",
             str(int(seed)),
-            "--innovation",
-            innovation,
         ]
-        if t_df is not None:
-            argv += ["--t-df", str(float(t_df))]
+        argv += _innovation_argv(innovation, t_df)
         stdout, stderr = await self._run(argv, cmd="sim")
         if not output_path.exists():
             raise AGError(
