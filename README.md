@@ -9,7 +9,7 @@ Each connector is its own Python package under `src/` with its own
 
 | Connector | Package | Console script | Description |
 | --- | --- | --- | --- |
-| FMP | [`fmp_mcp`](src/fmp_mcp/) | `fmp-mcp` | [Financial Modeling Prep](https://site.financialmodelingprep.com/) stable API — prices, news, financials, screener, macro, indexes (27 tools). Endpoint catalogue in [`FMP_ENDPOINTS.md`](FMP_ENDPOINTS.md). |
+| FMP | [`fmp_mcp`](src/fmp_mcp/) | `fmp-mcp` | [Financial Modeling Prep](https://site.financialmodelingprep.com/) stable API — prices, technical indicators, news, financials, valuation (DCF + Piotroski/Altman), analyst estimates, earnings transcripts, calendars, ownership (insider + 13F), SEC filings, ETFs, multi-asset, composite snapshots (97 tools). Endpoint catalogue in [`FMP_ENDPOINTS.md`](FMP_ENDPOINTS.md). |
 | BLS | [`bls_mcp`](src/bls_mcp/) | `bls-mcp` | US [Bureau of Labor Statistics Public Data API v2](https://www.bls.gov/developers/) — CPI, unemployment, payrolls, PPI, productivity, JOLTS, ECI (16 tools spanning fetch, discovery, analytics, and composite snapshots). Endpoint catalogue in [`BLS_ENDPOINTS.md`](BLS_ENDPOINTS.md). Works without a key via the v1 fallback (discovery tools work key-less). |
 
 To add a new connector, follow the recipe in [Adding a connector](#adding-a-connector).
@@ -266,6 +266,53 @@ turningbull-mcp/
 - **Macro**: "Compare 10y treasury yield to CPI YoY for 2020–2024."
   → `fmp_get_treasury_rates(from_date=…, to_date=…)` plus
   `fmp_get_economic_indicator(name=CPI, from_date=…, to_date=…)`.
+
+- **Technical indicators**: "Daily RSI(14) and 50/200-day SMAs for NVDA YTD."
+  → `fmp_get_technical_indicator(symbol=NVDA, indicator=rsi,
+  period_length=14, interval=1day, from_date=2026-01-01)` (and
+  again with `indicator=sma`, `period_length=50` / `200`).
+
+- **Earnings prep**: "Get me everything I need to write a preview for
+  Apple's next earnings."
+  → `fmp_earnings_prep(symbol=AAPL)` — next earnings date, last 4
+  surprises, transcript dates, forward analyst estimates, and the
+  current grade consensus, all in one call.
+
+- **Valuation**: "Is Microsoft overvalued by DCF? Compare to peers."
+  → `fmp_valuation_snapshot(symbol=MSFT)` — DCF + key metrics +
+  price target consensus + peers + Piotroski/Altman scores +
+  letter rating.
+
+- **Earnings transcript**: "Pull the full transcript of NVDA's Q4 2025 call."
+  → `fmp_get_earnings_transcript(symbol=NVDA, year=2025, quarter=4,
+  mode=summary)` — writes the transcript text to `$FMP_OUTPUT_DIR`.
+
+- **Insider trades**: "Has anyone at TSLA bought stock in the last
+  90 days?"
+  → `fmp_get_insider_trades(symbol=TSLA, transaction_type=P-Purchase)`.
+
+- **13F holdings**: "What did Berkshire Hathaway own at end of Q4?"
+  → `fmp_search_institution(name="Berkshire")` to get the CIK, then
+  `fmp_get_form_13f(cik=…, year=2025, quarter=4, mode=summary)`.
+
+- **Dividends & splits**: "Build a 20-year total-return series for KO."
+  → `fmp_get_historical_prices(symbol=KO, from_date=2005-01-01,
+  mode=summary)` + `fmp_get_dividend_history(symbol=KO, limit=200)`.
+
+- **ETF flow analysis**: "What ETFs hold NVDA and how heavily?"
+  → `fmp_get_etf_holders(symbol=NVDA)`. Reverse: "What's inside SPY?"
+  → `fmp_get_etf_holdings(symbol=SPY, mode=summary)`.
+
+- **SEC filings**: "Show me every 8-K NVDA filed in 2025."
+  → `fmp_list_sec_filings(symbol=NVDA, form_type=8-K,
+  from_date=2025-01-01)`.
+
+- **Calendars**: "Which companies report earnings next week?"
+  → `fmp_get_earnings_calendar(from_date=…, to_date=…)`.
+
+- **Company one-pager**: "Give me the basics on PLTR."
+  → `fmp_company_snapshot(symbol=PLTR)` — profile, quote, key metrics,
+  analyst target, latest 3 headlines.
 
 ## BLS-specific usage examples (in Claude)
 

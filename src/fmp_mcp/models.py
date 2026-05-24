@@ -73,6 +73,30 @@ OptionalSymbolList = Annotated[
 ]
 
 
+def _normalize_optional_symbol(value: str | None) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str) and not value.strip():
+        return None
+    return _normalize_symbol(value)
+
+
+def _normalize_cik(value: str | int | None) -> str | None:
+    if value is None:
+        return None
+    s = str(value).strip()
+    if not s:
+        raise ValueError("CIK cannot be blank")
+    return s.zfill(10)
+
+
+OptionalSymbol = Annotated[
+    str | None,
+    BeforeValidator(_normalize_optional_symbol),
+    Field(default=None, description="Optional single ticker symbol."),
+]
+
+
 class Period(str, Enum):
     annual = "annual"
     quarter = "quarter"
@@ -89,6 +113,66 @@ class Interval(str, Enum):
     thirty_min = "30min"
     one_hour = "1hour"
     four_hour = "4hour"
+
+
+class IndicatorInterval(str, Enum):
+    """Intervals accepted by ``/stable/technical-indicators/*``.
+
+    Same as :class:`Interval` plus a daily bucket.
+    """
+
+    one_min = "1min"
+    five_min = "5min"
+    fifteen_min = "15min"
+    thirty_min = "30min"
+    one_hour = "1hour"
+    four_hour = "4hour"
+    one_day = "1day"
+
+
+class TechnicalIndicator(str, Enum):
+    sma = "sma"
+    ema = "ema"
+    wma = "wma"
+    dema = "dema"
+    tema = "tema"
+    williams = "williams"
+    rsi = "rsi"
+    adx = "adx"
+    standard_deviation = "standardDeviation"
+
+
+class InsiderTransactionType(str, Enum):
+    """Common SEC Form 4 transaction codes."""
+
+    all = "ALL"
+    purchase = "P-Purchase"
+    sale = "S-Sale"
+    award = "A-Award"
+    grant = "M-Exempt"
+    gift = "G-Gift"
+
+
+class FormType(str, Enum):
+    """SEC form types most useful for analysts. ``ALL`` skips the filter."""
+
+    all = "ALL"
+    ten_k = "10-K"
+    ten_q = "10-Q"
+    eight_k = "8-K"
+    s1 = "S-1"
+    def14a = "DEF 14A"
+    form_3 = "3"
+    form_4 = "4"
+    form_5 = "5"
+    sc_13d = "SC 13D"
+    sc_13g = "SC 13G"
+    thirteen_f = "13F-HR"
+
+
+class SegmentationStructure(str, Enum):
+    flat = "flat"
+    grouped = "grouped"
 
 
 class IndexName(str, Enum):
@@ -124,4 +208,42 @@ ECONOMIC_INDICATORS: tuple[str, ...] = (
     "smoothedUSRecessionProbabilities",
     "30YearFixedRateMortgageAverage",
     "15YearFixedRateMortgageAverage",
+    "M2",
+    "ISM",
+    "capacityUtilization",
+    "PPI",
+    "corePPI",
+    "coreCPI",
+    "personalIncome",
+    "personalConsumptionExpenditures",
+    "corePCE",
+    "tradeBalance",
+    "industrialProduction",
+    "nonfarmPayrollPrivate",
+    "averageHourlyEarnings",
+    "averageWeeklyHours",
+    "laborForceParticipationRate",
+    "employmentPopulationRatio",
+    "jobOpenings",
+    "quitRate",
+    "hiresRate",
+    "newHomeSales",
+    "existingHomeSales",
 )
+
+
+CIK = Annotated[
+    str,
+    BeforeValidator(_normalize_cik),
+    Field(description="10-digit SEC CIK (leading zeros auto-padded)."),
+]
+
+
+OptionalCIK = Annotated[
+    str | None,
+    BeforeValidator(
+        lambda v: None if v is None or (isinstance(v, str) and not v.strip())
+        else _normalize_cik(v)
+    ),
+    Field(default=None, description="Optional SEC CIK (leading zeros auto-padded)."),
+]
