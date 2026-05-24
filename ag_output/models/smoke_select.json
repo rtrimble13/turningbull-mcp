@@ -1,0 +1,56 @@
+{
+  "metadata": {
+    "model_type": "ArimaGarch",
+    "timestamp": "2026-05-24T20:13:09Z",
+    "version": "0.1.0"
+  },
+  "parameters": {
+    "arima": {
+      "ar_coef": [
+        0.9999999993886441
+      ],
+      "intercept": 1.000000288512221,
+      "ma_coef": []
+    },
+    "garch": {
+      "alpha_coef": [
+        0.667779554281381
+      ],
+      "beta_coef": [
+        0.03555464645321149
+      ],
+      "omega": 1.5697760496576795e-11
+    }
+  },
+  "spec": {
+    "arima": {
+      "d": 0,
+      "p": 1,
+      "q": 0
+    },
+    "garch": {
+      "p": 1,
+      "q": 1
+    }
+  },
+  "state": {
+    "arima": {
+      "differenced_series": [],
+      "initialized": true,
+      "observation_history": [
+        500.0
+      ],
+      "residual_history": []
+    },
+    "garch": {
+      "initial_variance": 5.291395413777722e-11,
+      "initialized": true,
+      "squared_residual_history": [
+        2.74046118026717e-16
+      ],
+      "variance_history": [
+        1e-10
+      ]
+    }
+  }
+}
