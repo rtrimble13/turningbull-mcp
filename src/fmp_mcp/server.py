@@ -19,14 +19,25 @@ load_env()
 
 from .client import FMPClient, install_client, make_async_client
 from .tools import (
+    calendars,
     classification,
+    composites,
     corporate,
+    estimates,
+    etf,
+    filings,
     financials,
     indexes,
     macro,
+    movers,
+    multiasset,
     news,
+    ownership,
     prices,
     screener,
+    technicals,
+    transcripts,
+    valuation,
 )
 
 
@@ -59,6 +70,17 @@ for module in (
     indexes,
     macro,
     screener,
+    technicals,
+    calendars,
+    estimates,
+    transcripts,
+    valuation,
+    ownership,
+    filings,
+    movers,
+    etf,
+    multiasset,
+    composites,
 ):
     module.register(mcp)
 

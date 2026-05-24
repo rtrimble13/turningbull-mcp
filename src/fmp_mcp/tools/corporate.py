@@ -200,3 +200,173 @@ def register(mcp: FastMCP) -> None:
             )
         except Exception as exc:
             return wrap_error(exc)
+
+    @mcp.tool(
+        name="fmp_get_dividend_history",
+        annotations=READ_ONLY,
+        description=(
+            "Historical dividend payments for a symbol. Returns rows of "
+            "{date, recordDate, paymentDate, declarationDate, adjDividend, "
+            "dividend, yield, frequency}. Essential for total-return math "
+            "and dividend-growth screening."
+        ),
+    )
+    async def fmp_get_dividend_history(
+        symbol: Annotated[Symbol, Field(description="Ticker.")],
+        limit: Annotated[int, Field(ge=1, le=2000)] = 500,
+        mode: Annotated[OutputMode, Field(description="summary or inline.")] = OutputMode.inline,
+        response_format: Annotated[
+            ResponseFormat, Field(description="markdown or json.")
+        ] = ResponseFormat.markdown,
+    ) -> str:
+        try:
+            client = get_client()
+            data = await client.get(
+                "/stable/dividends",
+                {"symbol": symbol, "limit": limit},
+            )
+            rows = data if isinstance(data, list) else []
+            return render_large_result(
+                rows,
+                name=f"{symbol}_dividends_l{limit}",
+                mode=mode,
+                fmt=response_format,
+                title=f"Dividend history: {symbol}",
+                what=symbol,
+            )
+        except Exception as exc:
+            return wrap_error(exc)
+
+    @mcp.tool(
+        name="fmp_get_split_history",
+        annotations=READ_ONLY,
+        description=(
+            "Historical stock splits for a symbol. Returns {date, "
+            "numerator, denominator}. Critical for back-adjusting price "
+            "history when adjClose is unavailable."
+        ),
+    )
+    async def fmp_get_split_history(
+        symbol: Annotated[Symbol, Field(description="Ticker.")],
+        limit: Annotated[int, Field(ge=1, le=1000)] = 100,
+        mode: Annotated[OutputMode, Field(description="summary or inline.")] = OutputMode.inline,
+        response_format: Annotated[
+            ResponseFormat, Field(description="markdown or json.")
+        ] = ResponseFormat.markdown,
+    ) -> str:
+        try:
+            client = get_client()
+            data = await client.get(
+                "/stable/splits",
+                {"symbol": symbol, "limit": limit},
+            )
+            rows = data if isinstance(data, list) else []
+            return render_large_result(
+                rows,
+                name=f"{symbol}_splits_l{limit}",
+                mode=mode,
+                fmt=response_format,
+                title=f"Split history: {symbol}",
+                what=symbol,
+            )
+        except Exception as exc:
+            return wrap_error(exc)
+
+    @mcp.tool(
+        name="fmp_get_stock_peers",
+        annotations=READ_ONLY,
+        description=(
+            "Comparable companies for relative valuation. Returns "
+            "{symbol, peersList} where peersList is an array of related "
+            "tickers (same sector and similar size)."
+        ),
+    )
+    async def fmp_get_stock_peers(
+        symbol: Annotated[Symbol, Field(description="Ticker.")],
+        response_format: Annotated[
+            ResponseFormat, Field(description="markdown or json.")
+        ] = ResponseFormat.markdown,
+    ) -> str:
+        try:
+            client = get_client()
+            data = await client.get(
+                "/stable/stock-peers", {"symbol": symbol}
+            )
+            return render_small_result(
+                data,
+                response_format,
+                title=f"Peers: {symbol}",
+                what=symbol,
+            )
+        except Exception as exc:
+            return wrap_error(exc)
+
+    @mcp.tool(
+        name="fmp_get_historical_employee_count",
+        annotations=READ_ONLY,
+        description=(
+            "Reported employee count over time. Returns {symbol, cik, "
+            "acceptanceTime, periodOfReport, companyName, formType, "
+            "filingDate, employeeCount, source}. Useful for headcount "
+            "trend analysis and revenue-per-employee productivity metrics."
+        ),
+    )
+    async def fmp_get_historical_employee_count(
+        symbol: Annotated[Symbol, Field(description="Ticker.")],
+        limit: Annotated[int, Field(ge=1, le=200)] = 40,
+        mode: Annotated[OutputMode, Field(description="summary or inline.")] = OutputMode.inline,
+        response_format: Annotated[
+            ResponseFormat, Field(description="markdown or json.")
+        ] = ResponseFormat.markdown,
+    ) -> str:
+        try:
+            client = get_client()
+            data = await client.get(
+                "/stable/historical-employee-count",
+                {"symbol": symbol, "limit": limit},
+            )
+            rows = data if isinstance(data, list) else []
+            return render_large_result(
+                rows,
+                name=f"{symbol}_employee_count_l{limit}",
+                mode=mode,
+                fmt=response_format,
+                title=f"Employee count history: {symbol}",
+                what=symbol,
+            )
+        except Exception as exc:
+            return wrap_error(exc)
+
+    @mcp.tool(
+        name="fmp_get_historical_shares_float",
+        annotations=READ_ONLY,
+        description=(
+            "Historical float and outstanding share count time series. "
+            "Returns {symbol, date, freeFloat, floatShares, "
+            "outstandingShares, source}. Useful for tracking dilution / "
+            "buyback trends."
+        ),
+    )
+    async def fmp_get_historical_shares_float(
+        symbol: Annotated[Symbol, Field(description="Ticker.")],
+        mode: Annotated[OutputMode, Field(description="summary or inline.")] = OutputMode.inline,
+        response_format: Annotated[
+            ResponseFormat, Field(description="markdown or json.")
+        ] = ResponseFormat.markdown,
+    ) -> str:
+        try:
+            client = get_client()
+            data = await client.get(
+                "/api/v4/historical/shares_float", {"symbol": symbol}
+            )
+            rows = data if isinstance(data, list) else []
+            return render_large_result(
+                rows,
+                name=f"{symbol}_historical_float",
+                mode=mode,
+                fmt=response_format,
+                title=f"Historical shares float: {symbol}",
+                what=symbol,
+            )
+        except Exception as exc:
+            return wrap_error(exc)
