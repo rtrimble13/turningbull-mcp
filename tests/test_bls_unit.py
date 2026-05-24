@@ -26,7 +26,9 @@ from bls_mcp.client import (
 from bls_mcp.errors import BLSError
 from bls_mcp.tools.series import _fetch_all_series, _year_windows
 from bls_mcp.transform import (
+    CALCULATION_PERIODS,
     coerce_value,
+    filter_calculation_periods,
     period_to_iso_date,
     reshape_series,
 )
@@ -358,5 +360,224 @@ async def test_fetch_all_series_backfills_missing_ids(monkeypatch) -> None:
         )
         assert [s["seriesID"] for s in out] == ["KNOWN1", "UNKNOWN1"]
         assert out[1]["data"] == []
+    finally:
+        install_client(None)  # type: ignore[arg-type]
+
+
+# ---------- Phase 1: API completeness ---------------------------------------
+
+
+async def test_v2_passes_aspects_when_requested(monkeypatch) -> None:
+    """include_aspects=True should set ``aspects: true`` on the POST body."""
+    monkeypatch.setenv("BLS_API_KEY", "test-key")
+    captured: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        captured.append(body)
+        return httpx.Response(
+            200,
+            json=_series_response(
+                [{"seriesID": body["seriesid"][0], "data": []}]
+            ),
+        )
+
+    client = _make_client_with_handler(handler)
+    await client.fetch(["CUUR0000SA0"], aspects=True)
+    assert captured[0]["aspects"] is True
+
+
+async def test_v2_omits_aspects_by_default(monkeypatch) -> None:
+    monkeypatch.setenv("BLS_API_KEY", "test-key")
+    captured: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        captured.append(body)
+        return httpx.Response(
+            200,
+            json=_series_response(
+                [{"seriesID": body["seriesid"][0], "data": []}]
+            ),
+        )
+
+    client = _make_client_with_handler(handler)
+    await client.fetch(["CUUR0000SA0"])
+    assert "aspects" not in captured[0]
+
+
+def test_reshape_observation_full_calculation_grid() -> None:
+    """All four calc periods (1m/3m/6m/12m) should be surfaced when BLS returns them."""
+    raw = {
+        "seriesID": "CUUR0000SA0",
+        "data": [
+            {
+                "year": "2025",
+                "period": "M02",
+                "periodName": "February",
+                "value": "319.0",
+                "calculations": {
+                    "net_changes": {"1": "0.5", "3": "1.5", "6": "3.0", "12": "10.0"},
+                    "pct_changes": {"1": "0.2", "3": "0.5", "6": "1.0", "12": "3.1"},
+                },
+            },
+        ],
+    }
+    shaped = reshape_series(raw)
+    obs = shaped["observations"][0]
+    assert obs["net_change_1m"] == 0.5
+    assert obs["net_change_3m"] == 1.5
+    assert obs["net_change_6m"] == 3.0
+    assert obs["net_change_12m"] == 10.0
+    assert obs["pct_change_1m"] == 0.2
+    assert obs["pct_change_3m"] == 0.5
+    assert obs["pct_change_6m"] == 1.0
+    assert obs["pct_change_12m"] == 3.1
+
+
+def test_reshape_observation_handles_missing_calc_periods() -> None:
+    """Calculations grid keys still appear even when BLS doesn't return them."""
+    raw = {
+        "seriesID": "X",
+        "data": [{"year": "2025", "period": "M01", "value": "1.0"}],
+    }
+    obs = reshape_series(raw)["observations"][0]
+    for p in CALCULATION_PERIODS:
+        assert obs[f"net_change_{p}m"] is None
+        assert obs[f"pct_change_{p}m"] is None
+
+
+def test_reshape_observation_surfaces_aspects_and_latest() -> None:
+    raw = {
+        "seriesID": "X",
+        "data": [
+            {
+                "year": "2025",
+                "period": "M03",
+                "value": "1.0",
+                "latest": "true",
+                "aspects": [{"name": "preliminary", "value": "P"}],
+            }
+        ],
+    }
+    obs = reshape_series(raw)["observations"][0]
+    assert obs["latest"] is True
+    assert obs["aspects"] == [{"name": "preliminary", "value": "P"}]
+
+
+def test_reshape_series_exposes_metadata() -> None:
+    raw = {
+        "seriesID": "CUUR0000SA0",
+        "catalog": {
+            "series_title": "CPI-U: All items",
+            "data_type_text": "Index 1982-84=100",
+            "seasonality": "Not Seasonally Adjusted",
+            "survey_name": "Consumer Price Index",
+            "survey_abbreviation": "CU",
+            "area": "U.S. city average",
+            "area_code": "0000",
+            "item": "All items",
+            "item_code": "SA0",
+            "periodicity_code": "R",
+        },
+        "data": [],
+    }
+    shaped = reshape_series(raw)
+    # Legacy keys stay populated.
+    assert shaped["title"] == "CPI-U: All items"
+    assert shaped["units"] == "Index 1982-84=100"
+    assert shaped["seasonal_adjustment"] == "Not Seasonally Adjusted"
+    # New metadata block exposes the rest.
+    meta = shaped["metadata"]
+    assert meta["survey_name"] == "Consumer Price Index"
+    assert meta["survey_abbreviation"] == "CU"
+    assert meta["area"] == "U.S. city average"
+    assert meta["area_code"] == "0000"
+    assert meta["item_code"] == "SA0"
+    assert meta["periodicity_code"] == "R"
+
+
+def test_reshape_series_expose_metadata_false_drops_block() -> None:
+    raw = {
+        "seriesID": "X",
+        "catalog": {"series_title": "T", "survey_name": "S"},
+        "data": [],
+    }
+    shaped = reshape_series(raw, expose_metadata=False)
+    assert shaped["title"] == "T"
+    assert "metadata" not in shaped
+
+
+def test_filter_calculation_periods_drops_unwanted() -> None:
+    obs = [
+        {
+            "date": "2025-01-01",
+            "net_change_1m": 1.0,
+            "net_change_3m": 2.0,
+            "net_change_6m": 3.0,
+            "net_change_12m": 4.0,
+            "pct_change_1m": 0.1,
+            "pct_change_3m": 0.2,
+            "pct_change_6m": 0.3,
+            "pct_change_12m": 0.4,
+        }
+    ]
+    filtered = filter_calculation_periods(obs, [12])
+    assert filtered[0]["net_change_12m"] == 4.0
+    assert filtered[0]["pct_change_12m"] == 0.4
+    for k in ("net_change_1m", "net_change_3m", "net_change_6m",
+              "pct_change_1m", "pct_change_3m", "pct_change_6m"):
+        assert k not in filtered[0]
+
+
+async def test_get_latest_observations_returns_list(monkeypatch) -> None:
+    """The plural tool should fetch many series in one call and return latest each."""
+    monkeypatch.setenv("BLS_API_KEY", "test-key")
+    posts: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        posts.append(body)
+        return httpx.Response(
+            200,
+            json=_series_response(
+                [
+                    {
+                        "seriesID": sid,
+                        "data": [
+                            {"year": "2025", "period": "M01", "value": "100.0",
+                             "calculations": {"pct_changes": {"12": "2.5"}}},
+                            {"year": "2025", "period": "M02", "value": "101.0",
+                             "calculations": {"pct_changes": {"12": "3.0"}}},
+                        ],
+                    }
+                    for sid in body["seriesid"]
+                ]
+            ),
+        )
+
+    from bls_mcp.transform import reshape_series as _reshape
+
+    client = _make_client_with_handler(handler)
+    install_client(client)
+    try:
+        raw = await _fetch_all_series(
+            ["CUUR0000SA0", "LNS14000000"],
+            start_year=None,
+            end_year=None,
+            include_calculations=True,
+            include_annual_average=False,
+            include_catalog=True,
+        )
+        # Same path the tool would take; assert latest is the newest period.
+        shaped = [_reshape(s, expose_metadata=False) for s in raw]
+        latests = [s["observations"][-1] for s in shaped]
+        assert [o["date"] for o in latests] == ["2025-02-01", "2025-02-01"]
+        assert [o["value"] for o in latests] == [101.0, 101.0]
+        assert [o["pct_change_12m"] for o in latests] == [3.0, 3.0]
+        # One POST for both series; no year bounds.
+        assert len(posts) == 1
+        assert "startyear" not in posts[0]
+        assert "endyear" not in posts[0]
     finally:
         install_client(None)  # type: ignore[arg-type]

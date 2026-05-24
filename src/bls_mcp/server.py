@@ -18,7 +18,7 @@ from turningbull_mcp.logging import log_stderr
 load_env()
 
 from .client import BLSClient, install_client, make_async_client
-from .tools import series
+from .tools import analytics, composites, discovery, series
 
 
 @asynccontextmanager
@@ -43,7 +43,7 @@ async def lifespan(_: FastMCP) -> AsyncIterator[dict]:
 
 mcp = FastMCP("bls_mcp", lifespan=lifespan)
 
-for module in (series,):
+for module in (series, discovery, analytics, composites):
     module.register(mcp)
 
 
