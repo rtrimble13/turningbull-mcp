@@ -16,14 +16,12 @@ explicit annualization factor, persistence flagged when near 1.0.
 from __future__ import annotations
 
 import hashlib
-import json
 from pathlib import Path
 from typing import Annotated, Any
 
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field
 
-from ..errors import AGError
 from ..models import (
     ArimaOrder,
     DataPath,
@@ -385,13 +383,14 @@ def register(mcp: FastMCP) -> None:
                 "artifacts": {"simulation_csv": str(result.simulation_csv)},
             }
             if mode == OutputMode.inline:
-                rows = get_runner()._read_csv_rows(result.simulation_csv)
+                rows = get_runner()._read_csv_rows(result.simulation_csv, max_rows=5001)
                 if len(rows) > 5000:
                     payload["rows"] = rows[:5000]
                     payload["row_cap"] = 5000
                     payload["total_rows"] = len(rows)
                     payload["note"] = (
-                        "inline rows capped at 5000; switch to mode=summary "
+                        "inline rows capped at 5000 and read stops early "
+                        "(total_rows is a lower bound); switch to mode=summary "
                         "for the full simulation."
                     )
                 else:
@@ -667,19 +666,19 @@ def _summarize_forecast_rows(
     if variances:
         sigma_pp = [v**0.5 for v in variances]
         summary["per_period_stdev"] = sigma_pp
+        # Cumulative variance at horizon h (sum of step variances) is
+        # the relevant scale for a horizon-h return.
+        cum_var = []
+        running = 0.0
+        for v in variances:
+            running += v
+            cum_var.append(running)
+        summary["cumulative_variance"] = cum_var
         if annualize:
             summary["annualization_factor"] = annualization_factor
             summary["annualized_stdev"] = [
                 s * (annualization_factor**0.5) for s in sigma_pp
             ]
-            # Cumulative variance at horizon h (sum of step variances) is
-            # the relevant scale for a horizon-h return; annualize that too.
-            cum_var = []
-            running = 0.0
-            for v in variances:
-                running += v
-                cum_var.append(running)
-            summary["cumulative_variance"] = cum_var
             summary["annualized_cumulative_stdev"] = [
                 (cv * annualization_factor) ** 0.5 for cv in cum_var
             ]

@@ -32,7 +32,12 @@ from pathlib import Path
 from typing import Any, Literal
 
 from .errors import AGError, binary_not_found_message, map_returncode, timeout_message
-from .interpretation import parse_diagnostics_stdout, parse_fit_stdout, parse_model_json
+from .interpretation import (
+    parse_diagnostics_stdout,
+    parse_fit_stdout,
+    parse_model_json,
+    parse_simulate_stats_stdout,
+)
 
 DEFAULT_TIMEOUT_SECONDS = 600.0
 
@@ -211,7 +216,7 @@ class AGRunner:
             return None
 
     @staticmethod
-    def _read_csv_rows(path: Path) -> list[dict[str, Any]]:
+    def _read_csv_rows(path: Path, *, max_rows: int | None = None) -> list[dict[str, Any]]:
         """Read a small CSV without bringing in pandas for tiny outputs."""
         import csv
 
@@ -234,6 +239,8 @@ class AGRunner:
                         except ValueError:
                             coerced[k] = s
                     rows.append(coerced)
+                    if max_rows is not None and len(rows) >= max_rows:
+                        break
         except (FileNotFoundError, OSError):
             return []
         return rows
@@ -282,7 +289,7 @@ class AGRunner:
         if output_path.exists():
             model_json = self._maybe_load_json(output_path)
             if model_json:
-                parsed = {**parse_model_json(model_json), **parsed}
+                parsed = {**parsed, **parse_model_json(model_json)}
                 parsed.setdefault("model_json", model_json)
         else:
             raise AGError(
@@ -347,7 +354,7 @@ class AGRunner:
         if output_path.exists():
             model_json = self._maybe_load_json(output_path)
             if model_json:
-                parsed = {**parse_model_json(model_json), **parsed}
+                parsed = {**parsed, **parse_model_json(model_json)}
                 parsed.setdefault("model_json", model_json)
                 parsed.setdefault("criterion", criterion)
         else:
@@ -439,7 +446,7 @@ class AGRunner:
             raise AGError(
                 f"`ag simulate` reported success but {output_path} was not written."
             )
-        parsed_stats = parse_diagnostics_stdout(stdout)
+        parsed_stats = parse_simulate_stats_stdout(stdout)
         return SimulateResult(
             raw_stdout=stdout,
             raw_stderr=stderr,

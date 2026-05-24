@@ -46,6 +46,7 @@ from ..output import (
     simulations_dir,
 )
 from ..preprocessing import ReturnsMetadata
+from ..registry import load_model
 from ..runner import get_runner
 from ._common import READ_ONLY, render_small_result, wrap_error
 from .data import _load_series_impl
@@ -129,7 +130,7 @@ def _normal_quantile(p: float) -> float:
 
 
 def _build_distribution_recommendation(
-    parsed: dict[str, Any], *, symbol_or_series: str, model_path: str
+    parsed: dict[str, Any], *, symbol_or_series: str, data_path: str
 ) -> dict[str, Any]:
     """Render the Student-t recommendation block (or None) for the response.
 
@@ -149,7 +150,7 @@ def _build_distribution_recommendation(
         "student_t_recommended": True,
         "suggested_df": df,
         "rerun_command": (
-            f"ag_fit(data_path='{parsed.get('data_path', '')}', "
+            f"ag_fit(data_path='{data_path}', "
             f"arima={list(parsed.get('arima') or [])}, "
             f"garch={list(parsed.get('garch') or [])}, "
             f"innovation='student_t'{df_arg}, "
@@ -605,7 +606,9 @@ async def _volatility_snapshot_impl(
     )
 
     distribution_recommendation = _build_distribution_recommendation(
-        fit_parsed, symbol_or_series=identifier, model_path=str(model_path)
+        fit_parsed,
+        symbol_or_series=identifier,
+        data_path=meta.returns_csv_path,
     )
 
     payload: dict[str, Any] = {
@@ -662,7 +665,6 @@ async def _volatility_snapshot_impl(
             "forecast_csv_path": str(forecast.forecast_csv),
         },
         "artifacts": {
-            "prices_or_series_csv": meta.returns_csv_path,
             "returns_csv": meta.returns_csv_path,
             "model_json": str(model_path),
             "diagnostics_json": str(diagnostics.diagnostics_path)
@@ -821,8 +823,7 @@ async def _forecast_distribution_impl(
     candidate = Path(token).expanduser()
     if candidate.exists() and candidate.suffix.lower() == ".json":
         model_path = candidate
-        parsed: dict[str, Any] = {}
-        # We don't have meta in this branch, but model JSON gives us spec.
+        parsed = load_model(candidate)
         identifier = candidate.stem
     else:
         years_back = _years_back_from_period(period)

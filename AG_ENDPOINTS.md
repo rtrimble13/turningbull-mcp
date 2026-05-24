@@ -150,8 +150,7 @@ connector does NOT auto-refit; that's the caller's decision.
 
 When a field can't be parsed the dict simply doesn't carry the key —
 callers must use `.get(field)` and treat absence as "unknown" rather
-than zero. Missing fields are logged to stderr so the regex can be
-tightened later.
+than zero.
 
 For model JSONs (schema documented in `arima-garch/docs/file_formats.md`),
 the JSON is authoritative. `parse_model_json` flattens it into the same

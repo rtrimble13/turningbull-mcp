@@ -12,10 +12,10 @@ Design rules:
   Stdout formatting can drift across `ag` versions and we don't want a
   cosmetic change to break the connector.
 * For fields that also exist in the model JSON (parameters, log-
-  likelihood, AIC/BIC), the JSON is authoritative — call
-  :func:`parse_model_json` first and merge stdout-only fields on top.
-* When an extractor can't find a value, log a stderr warning so the
-  regex can be tightened later.
+  likelihood, AIC/BIC), the JSON is authoritative — merge JSON fields over
+  any stdout parse.
+* When an extractor can't find a value, omit the key so callers can treat
+  it as unknown.
 """
 
 from __future__ import annotations
@@ -190,6 +190,29 @@ def parse_diagnostics_stdout(stdout: str) -> dict[str, Any]:
         rf"Jarque[- ]?Bera[^\n]*p[- ]?value\s*[:=]\s*({_NUM})", stdout
     )
     return {k: v for k, v in out.items() if v is not None}
+
+
+def parse_simulate_stats_stdout(stdout: str) -> dict[str, Any]:
+    """Extract common scalar summary stats from `ag simulate --stats` stdout."""
+    out: dict[str, Any] = {}
+    for key, pattern in (
+        ("mean", rf"\bmean\b[^\n]*[:=]\s*({_NUM})"),
+        ("stdev", rf"\b(?:stdev|std(?:\.| )?dev|std)\b[^\n]*[:=]\s*({_NUM})"),
+        ("variance", rf"\bvariance\b[^\n]*[:=]\s*({_NUM})"),
+        ("min", rf"\bmin(?:imum)?\b[^\n]*[:=]\s*({_NUM})"),
+        ("max", rf"\bmax(?:imum)?\b[^\n]*[:=]\s*({_NUM})"),
+        ("q01", rf"\b(?:q01|p01|1(?:st)?\s*%ile)\b[^\n]*[:=]\s*({_NUM})"),
+        ("q05", rf"\b(?:q05|p05|5(?:th)?\s*%ile)\b[^\n]*[:=]\s*({_NUM})"),
+        ("q50", rf"\b(?:q50|p50|median|50(?:th)?\s*%ile)\b[^\n]*[:=]\s*({_NUM})"),
+        ("q95", rf"\b(?:q95|p95|95(?:th)?\s*%ile)\b[^\n]*[:=]\s*({_NUM})"),
+        ("q99", rf"\b(?:q99|p99|99(?:th)?\s*%ile)\b[^\n]*[:=]\s*({_NUM})"),
+    ):
+        v = _grab_float(pattern, stdout)
+        if v is not None:
+            out[key] = v
+    if not out and stdout.strip():
+        out["raw_stats_stdout"] = stdout.strip()
+    return out
 
 
 # ---------- model JSON extractor -----------------------------------------
