@@ -91,8 +91,7 @@ OptionalYearSpec = Annotated[
     Field(
         default=None,
         description=(
-            "Optional BEA Year parameter. Same syntax as YearSpec. Defaults "
-            "to LAST5 in most typed tools."
+            "Optional BEA Year parameter. Same syntax as YearSpec."
         ),
     ),
 ]

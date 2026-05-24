@@ -43,9 +43,14 @@ def _series_payload(
     df = pd.DataFrame(rows)
     df["date"] = pd.to_datetime(df["date"])
     df = df.drop_duplicates("date", keep="last").sort_values("date")
-    df["yoy_pct"] = df["value"].pct_change(periods=12).mul(100.0).fillna(
-        df["value"].pct_change(periods=4).mul(100.0)
-    )
+    month_index = df["date"].dt.to_period("M").astype("int64")
+    step_months = month_index.diff().dropna()
+    if step_months.empty:
+        yoy_periods = 1
+    else:
+        base_step = int(step_months.mode().iloc[0])
+        yoy_periods = max(int(round(12 / base_step)), 1) if base_step > 0 else 1
+    df["yoy_pct"] = df["value"].pct_change(periods=yoy_periods).mul(100.0)
     tail = df.tail(history_n)
     latest = df.iloc[-1]
     return {
@@ -86,7 +91,7 @@ def register(mcp: FastMCP) -> None:
         name="bea_gdp_snapshot",
         annotations=READ_ONLY,
         description=(
-            "One-call US GDP dashboard. Pulls NIPA T10101 (% change in real "
+            "Two-call US GDP dashboard. Pulls NIPA T10101 (% change in real "
             "GDP) and T10102 (contributions to % change), quarterly. "
             "Returns a structured payload with headline real GDP growth, "
             "the contributions from PCE / Gross Private Domestic Investment "
@@ -171,11 +176,12 @@ def register(mcp: FastMCP) -> None:
         name="bea_trade_balance_snapshot",
         annotations=READ_ONLY,
         description=(
-            "One-call US current-account / trade-balance dashboard. Pulls "
+            "US current-account / trade-balance dashboard. Pulls "
             "ITA balances for current account, goods, services, and "
-            "secondary income at annual frequency, plus IIP net "
-            "international investment position. Returns latest values, YoY "
-            "change, and a multi-year history."
+            "secondary income at annual frequency, plus a best-effort annual "
+            "IIP FinAssetsExclFinDeriv/ChgPosTotal (change in position) "
+            "series. Returns latest values, YoY change, and a multi-year "
+            "history."
         ),
     )
     async def bea_trade_balance_snapshot(

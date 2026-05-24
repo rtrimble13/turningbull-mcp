@@ -11,7 +11,7 @@ Each connector is its own Python package under `src/` with its own
 | --- | --- | --- | --- |
 | FMP | [`fmp_mcp`](src/fmp_mcp/) | `fmp-mcp` | [Financial Modeling Prep](https://site.financialmodelingprep.com/) stable API — prices, technical indicators, news, financials, valuation (DCF + Piotroski/Altman), analyst estimates, earnings transcripts, calendars, ownership (insider + 13F), SEC filings, ETFs, multi-asset, composite snapshots (97 tools). Endpoint catalogue in [`FMP_ENDPOINTS.md`](FMP_ENDPOINTS.md). |
 | BLS | [`bls_mcp`](src/bls_mcp/) | `bls-mcp` | US [Bureau of Labor Statistics Public Data API v2](https://www.bls.gov/developers/) — CPI, unemployment, payrolls, PPI, productivity, JOLTS, ECI (16 tools spanning fetch, discovery, analytics, and composite snapshots). Endpoint catalogue in [`BLS_ENDPOINTS.md`](BLS_ENDPOINTS.md). Works without a key via the v1 fallback (discovery tools work key-less). |
-| BEA | [`bea_mcp`](src/bea_mcp/) | `bea-mcp` | US [Bureau of Economic Analysis API](https://apps.bea.gov/API/bea_web_service_api_user_guide.htm) — national accounts (GDP, personal income, PCE, corporate profits), regional accounts (state/county GDP and income), GDP by industry, input-output tables, fixed assets, and international accounts (ITA, IIP, services, MNE). 21 tools spanning meta-discovery, generic GetData, typed per-dataset wrappers for all 12 data datasets, and composite snapshots (GDP, trade balance, regional, personal income). Endpoint catalogue in [`BEA_ENDPOINTS.md`](BEA_ENDPOINTS.md). Requires a free 36-char [UserID](https://apps.bea.gov/API/signup/). |
+| BEA | [`bea_mcp`](src/bea_mcp/) | `bea-mcp` | US [Bureau of Economic Analysis API](https://apps.bea.gov/API/bea_web_service_api_user_guide.htm) — national accounts (GDP, personal income, PCE, corporate profits), regional accounts (state/county GDP and income), GDP by industry, input-output tables, fixed assets, and international accounts (ITA, IIP, services, MNE). 22 tools spanning meta-discovery (four BEA meta methods + local table search), generic GetData, typed per-dataset wrappers for all 12 data datasets, and composite snapshots (GDP, trade balance, regional, personal income). Endpoint catalogue in [`BEA_ENDPOINTS.md`](BEA_ENDPOINTS.md). Requires a free 36-char [UserID](https://apps.bea.gov/API/signup/). |
 
 To add a new connector, follow the recipe in [Adding a connector](#adding-a-connector).
 
@@ -386,7 +386,7 @@ and series-ID encodings.
 ## BEA-specific usage examples (in Claude)
 
 The BEA connector wraps the [BEA Data API](https://apps.bea.gov/API/bea_web_service_api_user_guide.htm)
-across 21 tools spanning four areas: **discovery** (the five BEA meta
+across 22 tools spanning four areas: **discovery** (the four BEA meta
 methods plus a local table search), **generic fetch** (a single
 `bea_get_data` escape hatch), **typed per-dataset wrappers** (one per
 dataset for NIPA, NIUnderlyingDetail, FixedAssets, Regional,
