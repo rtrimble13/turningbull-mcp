@@ -13,6 +13,7 @@ Each connector is its own Python package under `src/` with its own
 | BLS | [`bls_mcp`](src/bls_mcp/) | `bls-mcp` | US [Bureau of Labor Statistics Public Data API v2](https://www.bls.gov/developers/) — CPI, unemployment, payrolls, PPI, productivity, JOLTS, ECI (16 tools spanning fetch, discovery, analytics, and composite snapshots). Endpoint catalogue in [`BLS_ENDPOINTS.md`](BLS_ENDPOINTS.md). Works without a key via the v1 fallback (discovery tools work key-less). |
 | BEA | [`bea_mcp`](src/bea_mcp/) | `bea-mcp` | US [Bureau of Economic Analysis API](https://apps.bea.gov/API/bea_web_service_api_user_guide.htm) — national accounts (GDP, personal income, PCE, corporate profits), regional accounts (state/county GDP and income), GDP by industry, input-output tables, fixed assets, and international accounts (ITA, IIP, services, MNE). 22 tools spanning meta-discovery (four BEA meta methods + local table search), generic GetData, typed per-dataset wrappers for all 12 data datasets, and composite snapshots (GDP, trade balance, regional, personal income). Endpoint catalogue in [`BEA_ENDPOINTS.md`](BEA_ENDPOINTS.md). Requires a free 36-char [UserID](https://apps.bea.gov/API/signup/). |
 | AG  | [`ag_mcp`](src/ag_mcp/) | `ag-mcp` | ARIMA-GARCH model fitting, selection, forecasting, simulation, and diagnostics on top of the `arima-garch` C++ engine (shelled out via the `ag` CLI). 16 tools: 8 primitives (1:1 CLI wrappers + describe/list helpers), 2 data-prep tools (returns conversion + direct FMP/BLS/BEA load), and 6 analyst composites (volatility snapshot, VaR snapshot, forecast distribution, volatility comparison, macro volatility snapshot, stress test). Designed to compose with FMP/BLS/BEA: a single Claude turn can go from "symbol or series ID" to "fitted model + diagnostics + forecast + VaR" with no manual file shuffling. Endpoint catalogue in [`AG_ENDPOINTS.md`](AG_ENDPOINTS.md). Requires building the C++ engine — see [arima-garch/README.md](https://github.com/) for the prerequisite. |
+| PO  | [`po_mcp`](src/po_mcp/) | `po-mcp` | Portfolio construction and risk analysis on top of the [`po`](https://github.com/rtrimble13/po) C++ engine (CLI for the 8 native subcommands) plus a lazy-loaded `portopt` Python supplement (HRP, ERC/risk parity, walk-forward backtest, Brinson attribution, portfolio summary). 27 tools: 9 CLI primitives (mvo, frontier, bl, bl-frontier, min-variance, max-sharpe, target-vol, target-return, report), 6 closed-form constructions (ERC, HRP, inverse-var/vol, equal-weight, max-diversification), 5 data/utility tools (estimate-from-returns, summarize-portfolio, validate-data, list/describe-results), and 7 CFA composites (construct-portfolio, compare-methods, frontier-with-targets, walk-forward backtest, Brinson attribution, stress-test, BL views workflow). Both inline JSON and on-disk data inputs are supported; inline payloads are content-addressed under `$PO_OUTPUT_DIR/tmp/`. Endpoint catalogue in [`PO_ENDPOINTS.md`](PO_ENDPOINTS.md). Requires building the C++ engine — see [po/README.md](https://github.com/rtrimble13/po) for the prerequisite. |
 
 To add a new connector, follow the recipe in [Adding a connector](#adding-a-connector).
 
@@ -165,6 +166,42 @@ To pass the binary path on registration, append
 }
 ```
 
+### Register the PO server with Claude Code
+
+`po_mcp` requires the compiled `po` binary from the
+[`po`](https://github.com/rtrimble13/po) portfolio-optimization project.
+Build it first (see that repo's README), then set
+`PO_BINARY_PATH=/full/path/to/po` in your `.env` (or place `po` on
+`PATH`). Optionally extend `PYTHONPATH` to include the built `portopt`
+Python extension so the HRP / ERC / walk-forward / attribution /
+summary tools become available (CLI-only tools work without it). Once
+that's done:
+
+```sh
+claude mcp add po -- uv run python -m po_mcp.server
+```
+
+To pass the binary path on registration, append
+`-e PO_BINARY_PATH=/full/path/to/po`.
+
+### Register PO with Claude Desktop
+
+```json
+{
+  "mcpServers": {
+    "po": {
+      "command": "C:\\path\\to\\turningbull-mcp\\.venv\\Scripts\\python.exe",
+      "args": ["-m", "po_mcp.server"],
+      "env": {
+        "PO_BINARY_PATH": "C:\\path\\to\\po\\build\\cli\\po.exe",
+        "PO_OUTPUT_DIR": "C:\\path\\to\\turningbull-mcp\\po_output",
+        "PYTHONPATH": "C:\\path\\to\\po\\build\\python"
+      }
+    }
+  }
+}
+```
+
 ### Inspect with the MCP Inspector
 
 ```sh
@@ -173,6 +210,8 @@ npx @modelcontextprotocol/inspector uv run python -m fmp_mcp.server
 npx @modelcontextprotocol/inspector uv run python -m bls_mcp.server
 # or:
 npx @modelcontextprotocol/inspector uv run python -m ag_mcp.server
+# or:
+npx @modelcontextprotocol/inspector uv run python -m po_mcp.server
 ```
 
 ## Test
@@ -601,3 +640,153 @@ map and returns-preprocessing conventions.
 - `ag_list_models()` — scan `$AG_OUTPUT_DIR/models/`.
 - `ag_sim_from_spec(arima=[1,0,1], garch=[1,1], length=500)` — bare
   spec → synthetic series (useful for tests).
+
+## PO-specific usage examples (in Claude)
+
+The PO connector wraps the [`po`](https://github.com/rtrimble13/po)
+portfolio-optimization C++ engine. Build the binary first and set
+`PO_BINARY_PATH` in your `.env`. The 6 closed-form portfolios (HRP,
+ERC, inverse-var/vol, equal-weight, max-diversification), the walk-
+forward backtest, Brinson attribution, and the arbitrary-weights
+summary tool additionally require the `portopt` Python extension on
+`PYTHONPATH` (the CLI tools work without it). All artifacts —
+materialized inline data, params files, optimization results, frontier
+CSVs, Jupyter reports, walk-forward backtests — live under
+`$PO_OUTPUT_DIR/`. See [`PO_ENDPOINTS.md`](PO_ENDPOINTS.md) for the
+full tool → CLI subcommand / `portopt` function map.
+
+### Mean-variance optimization (from inline data)
+
+- **Build an MVO portfolio from a Σ + μ payload**:
+  → `po_mvo(data={"assets": [{"ticker": "AAPL", "expected_return": 0.15},
+  {"ticker": "MSFT", "expected_return": 0.12}, ...],
+  "covariance": [[...], ...]}, risk_aversion=2.5)`. Returns weights,
+  Sharpe, vol, diversification ratio; writes a result JSON under
+  `$PO_OUTPUT_DIR/results/`.
+
+### Mean-variance with constraints (sector caps + turnover penalty)
+
+- **MVO with sector cap and turnover penalty**:
+  → `po_mvo(data=..., params={"lower_bounds": 0.0, "upper_bounds": 0.4,
+  "turnover_penalty": 0.01, "current_weights": {...},
+  "groups": [{"description": "Tech ≤ 30%", "members": ["AAPL","MSFT","NVDA"],
+  "upper": 0.30}]})`.
+
+### Build a portfolio from a returns CSV (one-shot)
+
+- **"Build me a max-Sharpe portfolio from these returns with Ledoit-Wolf
+  shrinkage"**:
+  → `po_construct_portfolio(returns_csv_path="/path/to/returns.csv",
+  method="max_sharpe", shrinkage="ledoit-wolf", risk_free_rate=0.04)` —
+  estimates μ, Σ → runs `po max-sharpe` → returns weights + metrics.
+
+### Compare construction methods on the same returns set
+
+- **"How does MVO compare to HRP and risk parity on this universe?"**:
+  → `po_compare_methods(returns_csv_path="/path/to/returns.csv",
+  methods=["mvo","max_sharpe","min_variance","risk_parity","hrp",
+  "equal_weight","max_diversification"],
+  shrinkage="ledoit-wolf")` — ranked by Sharpe, with per-method
+  turnover-vs-equal-weight.
+
+### Efficient frontier with highlighted target portfolios
+
+- **"Build the frontier and pin the 10%, 15%, and 20% volatility
+  portfolios"**:
+  → `po_efficient_frontier_with_targets(data=...,
+  target_vols=[0.10, 0.15, 0.20])` — returns the full frontier CSV +
+  three `target-vol` portfolios with their weights.
+
+### Black-Litterman with views
+
+- **"Build a BL portfolio where I think AAPL outperforms MSFT by 3%
+  with 70% confidence and Tech beats Energy by 5%"**:
+  → `po_black_litterman_views_workflow(data=...,
+  views=[{"pick_vector": {"AAPL": 1.0, "MSFT": -1.0},
+  "expected_return": 0.03, "confidence": 0.70,
+  "description": "AAPL > MSFT by 3%"}, {...}], tau=0.05,
+  risk_aversion=2.5, confidence_mode="idzorek")`.
+
+- **BL frontier with views**:
+  → `po_bl_frontier(data=..., params={"tau": 0.05, "risk_aversion": 2.5,
+  "confidence_mode": "idzorek", "views": [{...}]})`.
+
+### Risk parity (equal risk contribution)
+
+- **"Compute risk-parity weights for this covariance matrix"**:
+  → `po_equal_risk_contribution(data={"assets":[...],
+  "covariance":[[...]]})`. Returns weights, per-asset risk
+  contributions, portfolio vol, diversification ratio, effective N.
+
+### Hierarchical Risk Parity (HRP)
+
+- **HRP weights** (robust on short / ill-conditioned samples):
+  → `po_hierarchical_risk_parity(data=...)`.
+
+### Walk-forward backtest with transaction costs
+
+- **"Backtest a max-Sharpe strategy with monthly rebalancing and 5 bps
+  transaction cost vs SPY"**:
+  → `po_walk_forward_backtest(returns_csv_path="/path/to/returns.csv",
+  strategy="max_sharpe", window=126, step=21,
+  transaction_cost=0.0005, periods_per_year=252,
+  shrinkage="ledoit-wolf",
+  benchmark_returns_csv_path="/path/to/spy_returns.csv")` — returns
+  equity curve, CAGR, Sharpe, Sortino, max drawdown, tracking error,
+  information ratio.
+
+### Brinson attribution
+
+- **"Decompose active return between my portfolio and the benchmark by
+  sector"**:
+  → `po_risk_attribution(portfolio_group_weights={"Tech":0.45,
+  "Energy":0.10, "Health":0.20, "Financials":0.25},
+  benchmark_group_weights={...},
+  portfolio_group_returns={...},
+  benchmark_group_returns={...},
+  mode="brinson_fachler")` — allocation + selection effects per
+  sector and totals.
+
+### Arbitrary-weights portfolio summary
+
+- **"What's the Sharpe / vol / TE / beta of this candidate weights set?"**:
+  → `po_summarize_portfolio(weights={"AAPL":0.4,"MSFT":0.4,"NVDA":0.2},
+  data=..., benchmark_weights={...}, risk_free_rate=0.04)` — expected
+  return, Sharpe, diversification ratio, effective N, active share,
+  tracking error, beta, per-asset risk contributions.
+
+### Stress test a portfolio
+
+- **"What happens to my Sharpe if Tech drops 20% and volatility
+  doubles?"**:
+  → `po_stress_test_portfolio(weights={...}, data=...,
+  shock_scenarios=[{"name": "tech-crash",
+  "sector_shock": {"Tech": -0.20}, "covariance_multiplier": 2.0}])` —
+  per-scenario metrics + worst-case row by Sharpe.
+
+### Estimate Σ, μ from a returns CSV (chainable)
+
+- **"Estimate covariance and write an assets.json I can reuse for
+  multiple optimizations"**:
+  → `po_estimate_covariance(returns_csv_path="/path/to/returns.csv",
+  shrinkage="ledoit-wolf", periods_per_year=252)` — returns
+  `data_path` pointing at the written assets.json that you can pass to
+  any other PO tool via `data_path=...`.
+
+### Validate inputs before paying for an optimization
+
+- **"Check this Σ is PSD and the tickers line up before I run the
+  optimizer"**:
+  → `po_validate_data(data={"assets":[...], "covariance":[[...]]})`.
+
+### Diagnostic Jupyter report
+
+- **"Generate a full diagnostic HTML report for this portfolio"**:
+  → `po_report(data=..., params=..., method="both")` — writes the
+  HTML + executed notebook under `$PO_OUTPUT_DIR/reports/<label>/`.
+
+### Browse / load past results
+
+- `po_list_results()` — scan `$PO_OUTPUT_DIR/results/` and return a
+  summary per persisted optimization.
+- `po_describe_result(result_path="...")` — load one result JSON.
