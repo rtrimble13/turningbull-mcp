@@ -397,7 +397,9 @@ def register(mcp: FastMCP) -> None:
         try:
             data_p = _resolve_data_input(data, data_path)
             params_p = _resolve_params_input(params, kind="mvo")
-            out = _result_filename("min_variance", label, str(data_p))
+            out = _result_filename(
+                "min_variance", label, str(data_p), str(params_p or "")
+            )
             result = await get_runner().min_variance(
                 data_path=data_p,
                 output_path=out,
@@ -439,7 +441,9 @@ def register(mcp: FastMCP) -> None:
         try:
             data_p = _resolve_data_input(data, data_path)
             params_p = _resolve_params_input(params, kind="mvo")
-            out = _result_filename("max_sharpe", label, str(data_p))
+            out = _result_filename(
+                "max_sharpe", label, str(data_p), str(params_p or "")
+            )
             result = await get_runner().max_sharpe(
                 data_path=data_p,
                 output_path=out,
@@ -486,7 +490,11 @@ def register(mcp: FastMCP) -> None:
             data_p = _resolve_data_input(data, data_path)
             params_p = _resolve_params_input(params, kind="mvo")
             out = _result_filename(
-                "target_vol", label, str(data_p), f"tv{target_vol}"
+                "target_vol",
+                label,
+                str(data_p),
+                str(params_p or ""),
+                f"tv{target_vol}",
             )
             result = await get_runner().target_vol(
                 data_path=data_p,
@@ -536,7 +544,11 @@ def register(mcp: FastMCP) -> None:
             data_p = _resolve_data_input(data, data_path)
             params_p = _resolve_params_input(params, kind="mvo")
             out = _result_filename(
-                "target_return", label, str(data_p), f"tr{target_return}"
+                "target_return",
+                label,
+                str(data_p),
+                str(params_p or ""),
+                f"tr{target_return}",
             )
             result = await get_runner().target_return(
                 data_path=data_p,

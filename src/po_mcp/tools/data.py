@@ -354,15 +354,27 @@ def _psd_issues(cov: list[list[float]], *, ridge: float) -> list[str]:
     n = len(cov)
     for i in range(n):
         for j in range(i + 1, n):
-            if not math.isclose(cov[i][j], cov[j][i], rel_tol=1e-6, abs_tol=1e-9):
+            try:
+                left = float(cov[i][j])
+                right = float(cov[j][i])
+            except (TypeError, ValueError, IndexError):
                 issues.append(
-                    f"Σ not symmetric at ({i},{j}): {cov[i][j]} vs {cov[j][i]}."
+                    f"Σ has non-numeric or ragged entries at ({i},{j})."
+                )
+                return issues
+            if not math.isclose(left, right, rel_tol=1e-6, abs_tol=1e-9):
+                issues.append(
+                    f"Σ not symmetric at ({i},{j}): {left} vs {right}."
                 )
     if issues:
         return issues
     try:
         import numpy as np
-        sigma = np.asarray(cov, dtype=float)
+        try:
+            sigma = np.asarray(cov, dtype=float)
+        except (TypeError, ValueError):
+            issues.append("Σ contains non-numeric or ragged entries.")
+            return issues
         sigma = sigma + ridge * np.eye(n)
         try:
             np.linalg.cholesky(sigma)

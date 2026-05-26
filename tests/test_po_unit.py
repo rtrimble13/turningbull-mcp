@@ -392,6 +392,13 @@ def test_validate_data_rejects_non_psd() -> None:
     assert any("positive semi-definite" in i for i in issues)
 
 
+def test_validate_data_reports_nonnumeric_covariance_entries() -> None:
+    from po_mcp.tools.data import _psd_issues
+
+    issues = _psd_issues([[0.04, "bad"], [0.01, 0.09]], ridge=1e-10)  # type: ignore[list-item]
+    assert any("non-numeric or ragged" in i for i in issues)
+
+
 # ---------- pyengine lazy-import ------------------------------------------
 
 

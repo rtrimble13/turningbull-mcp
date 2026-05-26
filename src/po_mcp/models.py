@@ -26,6 +26,7 @@ import json
 from enum import Enum
 from pathlib import Path
 from typing import Annotated, Any, Literal
+from uuid import uuid4
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
 
@@ -283,7 +284,7 @@ def materialize_data(data: AssetDataInline | DataPathInput | dict[str, Any]) -> 
     target = tmp_dir() / fname
     if target.exists():
         return target
-    tmp_path = target.with_suffix(target.suffix + ".tmp")
+    tmp_path = target.with_suffix(f"{target.suffix}.{uuid4().hex}.tmp")
     tmp_path.write_text(canonical, encoding="utf-8")
     tmp_path.replace(target)
     return target
@@ -318,7 +319,7 @@ def materialize_params(
     target = params_dir() / fname
     if target.exists():
         return target
-    tmp_path = target.with_suffix(target.suffix + ".tmp")
+    tmp_path = target.with_suffix(f"{target.suffix}.{uuid4().hex}.tmp")
     tmp_path.write_text(canonical, encoding="utf-8")
     tmp_path.replace(target)
     return target

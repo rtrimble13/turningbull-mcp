@@ -194,7 +194,20 @@ def register(mcp: FastMCP) -> None:
                 "target_vol",
                 "target_return",
             ):
-                out = results_dir() / f"{method_value}_{label_or_hash(label, returns_path.stem)}.json"
+                stem = label_or_hash(
+                    label,
+                    method_value,
+                    str(returns_path),
+                    str(data_path),
+                    str(params_path or ""),
+                    shrinkage.value,
+                    str(periods_per_year),
+                    str(risk_free_rate),
+                    str(risk_aversion),
+                    str(target_vol),
+                    str(target_return),
+                )
+                out = results_dir() / f"{method_value}_{stem}.json"
                 runner_method = {
                     "mvo": runner.mvo,
                     "max_sharpe": runner.max_sharpe,
