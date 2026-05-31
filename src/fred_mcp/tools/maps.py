@@ -9,6 +9,7 @@ from pydantic import Field
 
 from turningbull_mcp.models import OptionalDate, ResponseFormat
 
+from ..models import AggregationMethod, Units
 from ._common import (
     READ_ONLY,
     get_client,
@@ -98,9 +99,9 @@ def register(mcp: FastMCP) -> None:
         season: Annotated[str, Field(description="Seasonality: SA, NSA, or SSA.")],
         units: Annotated[str, Field(description="Units of measurement for the data (e.g. Dollars).")],
         start_date: Annotated[OptionalDate, Field(description="Start date for a date range (YYYY-MM-DD).")] = None,
-        transformation: Annotated[str | None, Field(description="Value transform: lin, chg, ch1, pch, pc1, pca, cch, cca, log.")] = None,
-        frequency: Annotated[str | None, Field(description="Aggregate to frequency: d, w, m, q, sa, a (+ eop variants).")] = None,
-        aggregation_method: Annotated[str | None, Field(description="avg, sum, or eop when aggregating.")] = None,
+        transformation: Annotated[Units | None, Field(description="Value transform (lin, chg, ch1, pch, pc1, pca, cch, cca, log).")] = None,
+        frequency: Annotated[str | None, Field(description="Aggregate to frequency: d, w, bw, m, q, sa, a (+ eop variants).")] = None,
+        aggregation_method: Annotated[AggregationMethod | None, Field(description="avg, sum, or eop when aggregating.")] = None,
         response_format: Annotated[
             ResponseFormat, Field(description="markdown or json")
         ] = ResponseFormat.json,

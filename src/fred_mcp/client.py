@@ -68,7 +68,7 @@ class FredClient:
                     last_exc = exc
                     continue
                 raise map_http_error(exc) from exc
-            except httpx.TransportError as exc:
+            except httpx.RequestError as exc:
                 if attempt < retries:
                     await asyncio.sleep(backoff_seconds(attempt))
                     last_exc = exc
