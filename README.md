@@ -14,6 +14,7 @@ Each connector is its own Python package under `src/` with its own
 | BEA | [`bea_mcp`](src/bea_mcp/) | `bea-mcp` | US [Bureau of Economic Analysis API](https://apps.bea.gov/API/bea_web_service_api_user_guide.htm) — national accounts (GDP, personal income, PCE, corporate profits), regional accounts (state/county GDP and income), GDP by industry, input-output tables, fixed assets, and international accounts (ITA, IIP, services, MNE). 22 tools spanning meta-discovery (four BEA meta methods + local table search), generic GetData, typed per-dataset wrappers for all 12 data datasets, and composite snapshots (GDP, trade balance, regional, personal income). Endpoint catalogue in [`BEA_ENDPOINTS.md`](BEA_ENDPOINTS.md). Requires a free 36-char [UserID](https://apps.bea.gov/API/signup/). |
 | AG  | [`ag_mcp`](src/ag_mcp/) | `ag-mcp` | ARIMA-GARCH model fitting, selection, forecasting, simulation, and diagnostics on top of the `arima-garch` C++ engine (shelled out via the `ag` CLI). 16 tools: 8 primitives (1:1 CLI wrappers + describe/list helpers), 2 data-prep tools (returns conversion + direct FMP/BLS/BEA load), and 6 analyst composites (volatility snapshot, VaR snapshot, forecast distribution, volatility comparison, macro volatility snapshot, stress test). Designed to compose with FMP/BLS/BEA: a single Claude turn can go from "symbol or series ID" to "fitted model + diagnostics + forecast + VaR" with no manual file shuffling. Endpoint catalogue in [`AG_ENDPOINTS.md`](AG_ENDPOINTS.md). Requires building the C++ engine — see [arima-garch/README.md](https://github.com/) for the prerequisite. |
 | PO  | [`po_mcp`](src/po_mcp/) | `po-mcp` | Portfolio construction and risk analysis on top of the [`po`](https://github.com/rtrimble13/po) C++ engine (CLI for the 8 native subcommands) plus a lazy-loaded `portopt` Python supplement (HRP, ERC/risk parity, walk-forward backtest, Brinson attribution, portfolio summary). 27 tools: 9 CLI primitives (mvo, frontier, bl, bl-frontier, min-variance, max-sharpe, target-vol, target-return, report), 6 closed-form constructions (ERC, HRP, inverse-var/vol, equal-weight, max-diversification), 5 data/utility tools (estimate-from-returns, summarize-portfolio, validate-data, list/describe-results), and 7 CFA composites (construct-portfolio, compare-methods, frontier-with-targets, walk-forward backtest, Brinson attribution, stress-test, BL views workflow). Both inline JSON and on-disk data inputs are supported; inline payloads are content-addressed under `$PO_OUTPUT_DIR/tmp/`. Endpoint catalogue in [`PO_ENDPOINTS.md`](PO_ENDPOINTS.md). Requires building the C++ engine — see [po/README.md](https://github.com/rtrimble13/po) for the prerequisite. |
+| FRED | [`fred_mcp`](src/fred_mcp/) | `fred-mcp` | US [Federal Reserve (FRED) API](https://fred.stlouisfed.org/docs/api/fred/) — economic time series, categories, releases, sources, and tags. 35 tools covering the full core FRED API (Categories ×6, Releases ×9, Series ×10 incl. observations/search/vintages, Sources ×3, Tags ×3) plus the GeoFRED / FRED Maps regional-data API ×4 (shape files, series groups, series data, regional data). Endpoint catalogue in [`FRED_ENDPOINTS.md`](FRED_ENDPOINTS.md). Requires a free [`FRED_API_KEY`](https://fredaccount.stlouisfed.org/apikeys) — FRED rejects keyless requests, so the connector fails fast with a clear error when it is unset. |
 
 To add a new connector, follow the recipe in [Adding a connector](#adding-a-connector).
 
@@ -202,6 +203,43 @@ To pass the binary path on registration, append
 }
 ```
 
+### Register the FRED server with Claude Code
+
+`fred_mcp` wraps the St. Louis Fed [FRED API](https://fred.stlouisfed.org/docs/api/fred/).
+A free API key is **required** — register at
+<https://fredaccount.stlouisfed.org/apikeys> and set `FRED_API_KEY` in your
+`.env` (FRED rejects keyless requests, so the tools fail fast with a clear
+error when it is unset). Then:
+
+```sh
+claude mcp add fred -- uv run python -m fred_mcp.server
+```
+
+Or, without uv:
+
+```sh
+claude mcp add fred -- /full/path/to/.venv/Scripts/python -m fred_mcp.server
+```
+
+To pass the API key on registration, append `-e FRED_API_KEY=your_key`.
+
+### Register FRED with Claude Desktop
+
+```json
+{
+  "mcpServers": {
+    "fred": {
+      "command": "C:\\path\\to\\turningbull-mcp\\.venv\\Scripts\\python.exe",
+      "args": ["-m", "fred_mcp.server"],
+      "env": {
+        "FRED_API_KEY": "your_real_key_here",
+        "FRED_OUTPUT_DIR": "C:\\path\\to\\turningbull-mcp\\fred_output"
+      }
+    }
+  }
+}
+```
+
 ### Inspect with the MCP Inspector
 
 ```sh
@@ -212,6 +250,8 @@ npx @modelcontextprotocol/inspector uv run python -m bls_mcp.server
 npx @modelcontextprotocol/inspector uv run python -m ag_mcp.server
 # or:
 npx @modelcontextprotocol/inspector uv run python -m po_mcp.server
+# or:
+npx @modelcontextprotocol/inspector uv run python -m fred_mcp.server
 ```
 
 ## Test
@@ -790,3 +830,50 @@ full tool → CLI subcommand / `portopt` function map.
 - `po_list_results()` — scan `$PO_OUTPUT_DIR/results/` and return a
   summary per persisted optimization.
 - `po_describe_result(result_path="...")` — load one result JSON.
+
+## FRED-specific usage examples (in Claude)
+
+The FRED connector wraps the [FRED API](https://fred.stlouisfed.org/docs/api/fred/)
+across 35 tools spanning the full core API — **Categories**, **Releases**,
+**Series**, **Sources**, **Tags** — plus the **GeoFRED / FRED Maps**
+regional-data API. A free `FRED_API_KEY` is required (register at
+<https://fredaccount.stlouisfed.org/apikeys>). Large list results
+(observations, series searches, tag lists) accept a `mode` parameter:
+`inline` (default) or `summary` (writes CSV+Parquet to `$FRED_OUTPUT_DIR`).
+See [`FRED_ENDPOINTS.md`](FRED_ENDPOINTS.md) for the full tool→endpoint map.
+
+### Series & observations
+
+- **Pull a series' data**: "Get real GNP since 2000."
+  → `fred_get_series_observations(series_id="GNPCA",
+  observation_start="2000-01-01")`.
+- **Transform on the fly**: "Show CPI as year-over-year percent change."
+  → `fred_get_series_observations(series_id="CPIAUCSL", units="pc1")`.
+- **Series metadata**: "What is series UNRATE?"
+  → `fred_get_series(series_id="UNRATE")`.
+- **Vintages / revisions**: "When was GDP revised?"
+  → `fred_get_series_vintagedates(series_id="GDP")`.
+
+### Discovery
+
+- **Search**: "Find series about mortgage rates."
+  → `fred_search_series(search_text="mortgage rate")`.
+- **Browse categories**: "What's under the root category?"
+  → `fred_get_category_children(category_id=0)`.
+- **By tags**: "List series tagged monthly + nation."
+  → `fred_get_tags_series(tag_names="monthly;nation")`.
+- **Releases**: "What releases does FRED publish, and when?"
+  → `fred_get_releases()` / `fred_get_releases_dates()`.
+- **Sources**: "Who provides this data?"
+  → `fred_get_sources()` and `fred_get_source_releases(source_id=1)`.
+
+### GeoFRED (regional maps)
+
+- **Series group metadata**: "Is per-capita personal income mappable?"
+  → `fred_get_geofred_series_group(series_id="WIPCPI")`.
+- **Regional data**: "Per-capita personal income by state for 2022."
+  → `fred_get_geofred_regional_data(series_group="882",
+  region_type="state", date="2022-01-01", season="NSA",
+  units="Dollars")`.
+- **Shape files**: "Get the state shape GeoJSON."
+  → `fred_get_geofred_shapes(shape="state")`.
