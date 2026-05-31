@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any
 
 from turningbull_mcp.models import OutputMode, ResponseFormat
-from turningbull_mcp.output import resolve_output_dir
 from turningbull_mcp.tool_helpers import (
     READ_ONLY,
     render_large_result as _render_large,
@@ -25,7 +24,9 @@ __all__ = [
 
 
 def output_dir() -> Any:
-    return resolve_output_dir("FRED_OUTPUT_DIR", "./fred_output")
+    from ..output import output_dir as _impl
+
+    return _impl()
 
 
 def get_client():  # re-export for tools

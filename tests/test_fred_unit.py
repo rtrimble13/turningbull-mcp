@@ -143,5 +143,5 @@ async def test_all_tools_registered() -> None:
         "fred_get_geofred_series_data",
         "fred_get_geofred_regional_data",
     }
-    assert expected <= names
+    assert expected == names
     assert len(expected) == 35
